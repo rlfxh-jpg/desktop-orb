@@ -18,7 +18,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
 
     desktop_orb::App app;
     if (!app.Initialize()) {
-        MessageBoxW(nullptr, L"无法创建桌面悬浮球窗口。请检查程序旁的 assets\\icon\\orb.png。",
+        MessageBoxW(nullptr, L"无法初始化桌面悬浮球或功能菜单。请检查程序旁的 assets\\icon\\ 图片文件。",
                     L"Desktop Orb 启动失败", MB_OK | MB_ICONERROR);
         return 1;
     }
