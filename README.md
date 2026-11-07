@@ -29,3 +29,4 @@ Settings are stored at `%APPDATA%\DesktopOrb\settings.ini`. Change `Hotkey` to a
 - `app`: coordinates the orb, feature menu and switcher.
 - `platform`: Windows monitors, settings, application windows and DWM thumbnails.
 - `ui`: native window lifecycle, drawing and the three interface components.
+- `src/icon`: embedded transparent orb artwork and its Windows resource definition.

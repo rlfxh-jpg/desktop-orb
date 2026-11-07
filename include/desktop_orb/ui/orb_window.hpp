@@ -1,5 +1,6 @@
 #pragma once
 
+#include "desktop_orb/ui/orb_artwork.hpp"
 #include "desktop_orb/ui/window_base.hpp"
 #include <functional>
 
@@ -23,8 +24,7 @@ protected:
     LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) override;
 
 private:
-    void UpdateRegion();
-    void Paint();
+    OrbArtwork artwork_;
     POINT drag_cursor_{};
     RECT drag_origin_{};
     bool dragging_ = false;
