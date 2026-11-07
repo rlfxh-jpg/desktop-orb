@@ -1,5 +1,5 @@
 // 文件职责：从部署目录加载 PNG，并集中管理 GDI+ 初始化和图片解码资源。
-// 普通窗口绘制与分层窗口像素输出共用同一份解码结果。
+// 普通窗口绘制与分层窗口像素输出共用同一份解码结果；分层绘制的 GDI 资源即用即释放。
 #include "desktop_orb/ui/icon_image.hpp"
 
 #include "desktop_orb/platform/asset_path.hpp"
@@ -96,6 +96,45 @@ bool IconImage::Rasterize(int width, int height, void* pixels, int stride) const
                     static_cast<const BYTE*>(data.Scan0) + row * data.Stride, width * 4);
     }
     return frame.UnlockBits(&data) == Gdiplus::Ok;
+}
+
+bool IconImage::RenderLayered(HWND window, BYTE opacity) const {
+    if (!ready() || !window) return false;
+    RECT bounds{};
+    if (!GetWindowRect(window, &bounds)) return false;
+    const int width = bounds.right - bounds.left;
+    const int height = bounds.bottom - bounds.top;
+    if (width <= 0 || height <= 0) return false;
+
+    BITMAPINFO info{};
+    // 核心逻辑：负高度让 DIB 自上而下排列，与 Rasterize 的预乘 Alpha BGRA 输出一致。
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width;
+    info.bmiHeader.biHeight = -height;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    HDC screen = GetDC(nullptr);
+    if (!screen) return false;
+    HDC memory = CreateCompatibleDC(screen);
+    void* pixels = nullptr;
+    HBITMAP bitmap = memory ? CreateDIBSection(memory, &info, DIB_RGB_COLORS, &pixels, nullptr, 0) : nullptr;
+    bool success = false;
+    if (bitmap && pixels && Rasterize(width, height, pixels, width * 4)) {
+        HGDIOBJ previous = SelectObject(memory, bitmap);
+        POINT position{bounds.left, bounds.top};
+        POINT origin{0, 0};
+        SIZE size{width, height};
+        BLENDFUNCTION blend{AC_SRC_OVER, 0, opacity, AC_SRC_ALPHA};
+        success = UpdateLayeredWindow(window, screen, &position, &size, memory,
+                                      &origin, 0, &blend, ULW_ALPHA) != FALSE;
+        SelectObject(memory, previous);
+    }
+    // 核心逻辑：UpdateLayeredWindow 会复制像素，成功和失败路径均可立即释放临时 GDI 资源。
+    if (bitmap) DeleteObject(bitmap);
+    if (memory) DeleteDC(memory);
+    ReleaseDC(nullptr, screen);
+    return success;
 }
 
 }  // desktop_orb::ui 命名空间结束

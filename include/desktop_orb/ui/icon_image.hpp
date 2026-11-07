@@ -1,7 +1,7 @@
 #pragma once
 
 // 文件职责：定义 UI 层的 PNG 图标接口，统一加载、绘制和透明像素输出。
-// 图标对象持有解码结果；普通窗口和分层窗口共用这一接口。
+// 图标对象持有解码结果；普通窗口和分层窗口共用这一接口，绘制时临时持有 GDI 资源。
 #include <memory>
 #include <windows.h>
 
@@ -36,6 +36,10 @@ public:
     //       stride 为每行字节数，至少为 width * 4，缓冲区须容纳 height 行。
     // 返回：成功为 true；尺寸、缓冲区或图片无效以及绘制失败时为 false。
     bool Rasterize(int width, int height, void* pixels, int stride) const;
+    // 作用：把图标按窗口尺寸提交到分层窗口，保留 PNG 逐像素透明度。
+    // 参数：window 为已创建的分层窗口；opacity 为叠加在 PNG Alpha 上的整体透明度。
+    // 返回：提交成功为 true；窗口、图片或 GDI 资源不可用时为 false。
+    bool RenderLayered(HWND window, BYTE opacity) const;
 
 private:
     struct Impl;

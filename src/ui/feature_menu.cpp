@@ -1,4 +1,4 @@
-// 文件职责：创建环绕悬浮球的图标按钮，负责布局、绘制及延迟显示名称提示。
+// 文件职责：创建环绕悬浮球的图标按钮，负责悬停缩放、布局、绘制及延迟显示名称提示。
 // 菜单持有按钮；每个按钮持有自己的 Tooltip 窗口，业务动作由调用方回调执行。
 #include "desktop_orb/ui/feature_menu.hpp"
 
@@ -10,6 +10,8 @@
 namespace desktop_orb::ui {
 
 constexpr WORD kTooltipDelayMs = 3000;
+constexpr int kDefaultLogicalSize = 44;
+constexpr int kHoveredLogicalSize = 64;
 
 class FeatureMenu::Button final : public WindowBase {
 public:
@@ -25,13 +27,20 @@ public:
         if (tooltip_) DestroyWindow(tooltip_);
     }
 
-    // 作用：创建初始隐藏的圆形功能按钮窗口。
+    // 作用：创建初始隐藏的功能按钮窗口，并初始化透明图像与名称提示。
     // 参数：无。返回：按钮及提示均创建成功为 true，Win32 创建失败为 false。
     bool Create() {
+        // 核心逻辑：有 PNG 时使用逐像素透明的分层窗口；缺图时仍绘制普通圆形备用符号。
+        const DWORD ex_style = WS_EX_TOPMOST | WS_EX_TOOLWINDOW |
+            (icon_.ready() ? WS_EX_LAYERED : 0);
         if (!CreateNative(L"DesktopOrbFeature", title_.c_str(), WS_POPUP,
-                          WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
-                          0, 0, 82, 82)) return false;
-        SetWindowRgn(handle(), CreateEllipticRgn(0, 0, 82, 82), TRUE);
+                          ex_style,
+                          0, 0, kDefaultLogicalSize, kDefaultLogicalSize)) return false;
+        if (icon_.ready()) {
+            if (!icon_.RenderLayered(handle(), 255)) return false;
+        } else {
+            SetWindowRgn(handle(), CreateEllipticRgn(0, 0, kDefaultLogicalSize, kDefaultLogicalSize), TRUE);
+        }
 
         INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_WIN95_CLASSES};
         if (!InitCommonControlsEx(&controls)) return false;
@@ -56,11 +65,28 @@ public:
         return true;
     }
 
-    // 作用：调整按钮位置和圆形点击区域。
-    // 参数：x、y 为屏幕坐标；size 为直径像素。返回：无。
-    void Position(int x, int y, int size) {
-        SetWindowPos(handle(), HWND_TOPMOST, x, y, size, size, SWP_NOACTIVATE);
-        SetWindowRgn(handle(), CreateEllipticRgn(0, 0, size, size), TRUE);
+    // 作用：设置按钮中心及默认、悬停直径，并以默认大小显示。
+    // 参数：center_x、center_y 为屏幕中心坐标；default_size、hovered_size 为物理像素直径。
+    // 返回：无。
+    void Position(int center_x, int center_y, int default_size, int hovered_size) {
+        center_x_ = center_x;
+        center_y_ = center_y;
+        default_size_ = default_size;
+        hovered_size_ = hovered_size;
+        expanded_ = false;
+        SetDiameter(default_size_);
+    }
+
+    // 作用：取消鼠标离开跟踪并恢复默认直径，供菜单隐藏时调用。
+    // 参数：无。返回：无。
+    void ResetHover() {
+        if (tracking_mouse_) {
+            TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE | TME_CANCEL, handle(), 0};
+            TrackMouseEvent(&tracking);
+            tracking_mouse_ = false;
+        }
+        expanded_ = false;
+        SetDiameter(default_size_);
     }
 
     // 作用：启用提示，供菜单重新展开时调用。
@@ -80,29 +106,45 @@ protected:
     // 参数：message 为消息码；wparam、lparam 为消息数据。
     // 返回：已处理时为 0，否则为基类消息处理结果。
     LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) override {
+        if (message == WM_MOUSEMOVE) {
+            if (!tracking_mouse_) {
+                TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE, handle(), 0};
+                tracking_mouse_ = TrackMouseEvent(&tracking) != FALSE;
+            }
+            if (!expanded_) {
+                expanded_ = true;
+                SetDiameter(hovered_size_);
+            }
+            return 0;
+        }
+        if (message == WM_MOUSELEAVE) {
+            tracking_mouse_ = false;
+            expanded_ = false;
+            SetDiameter(default_size_);
+            return 0;
+        }
         if (message == WM_PAINT) {
+            if (icon_.ready()) {
+                // 核心逻辑：分层窗口的图像由 UpdateLayeredWindow 提交，不在 WM_PAINT 中叠加不透明背景。
+                ValidateRect(handle(), nullptr);
+                return 0;
+            }
             PAINTSTRUCT paint{};
             HDC dc = BeginPaint(handle(), &paint);
             RECT bounds{};
             GetClientRect(handle(), &bounds);
             const int size = bounds.right;
             Fill(dc, bounds, Color(36, 52, 57));
-            const int icon_size = size * 66 / 100;
-            const int icon_x = (size - icon_size) / 2;
-            const RECT icon_bounds{icon_x, icon_x, icon_x + icon_size, icon_x + icon_size};
-            // 核心逻辑：外部图片缺失或绘制失败时保留可识别的功能符号。
-            if (!icon_.Draw(dc, icon_bounds)) {
-                HBRUSH transparent = static_cast<HBRUSH>(GetStockObject(NULL_BRUSH));
-                HGDIOBJ old_brush = SelectObject(dc, transparent);
-                HPEN pen = CreatePen(PS_SOLID, std::max(1, size / 41), Color(84, 211, 184));
-                HGDIOBJ old_pen = SelectObject(dc, pen);
-                Rectangle(dc, size * 34 / 100, size * 34 / 100, size * 66 / 100, size * 59 / 100);
-                SelectObject(dc, old_brush);
-                SelectObject(dc, old_pen);
-                DeleteObject(pen);
-                Line(dc, {size / 2, size * 59 / 100}, {size / 2, size * 67 / 100}, Color(84, 211, 184), 2);
-                Line(dc, {size * 39 / 100, size * 67 / 100}, {size * 61 / 100, size * 67 / 100}, Color(84, 211, 184), 2);
-            }
+            HBRUSH transparent = static_cast<HBRUSH>(GetStockObject(NULL_BRUSH));
+            HGDIOBJ old_brush = SelectObject(dc, transparent);
+            HPEN pen = CreatePen(PS_SOLID, std::max(1, size / 41), Color(84, 211, 184));
+            HGDIOBJ old_pen = SelectObject(dc, pen);
+            Rectangle(dc, size * 34 / 100, size * 34 / 100, size * 66 / 100, size * 59 / 100);
+            SelectObject(dc, old_brush);
+            SelectObject(dc, old_pen);
+            DeleteObject(pen);
+            Line(dc, {size / 2, size * 59 / 100}, {size / 2, size * 67 / 100}, Color(84, 211, 184), 2);
+            Line(dc, {size * 39 / 100, size * 67 / 100}, {size * 61 / 100, size * 67 / 100}, Color(84, 211, 184), 2);
             EndPaint(handle(), &paint);
             return 0;
         }
@@ -114,10 +156,28 @@ protected:
     }
 
 private:
+    // 作用：围绕固定中心调整窗口尺寸，并同步更新透明图像或备用圆形点击区域。
+    // 参数：diameter 为目标物理像素直径。返回：无。
+    void SetDiameter(int diameter) {
+        SetWindowPos(handle(), nullptr, center_x_ - diameter / 2, center_y_ - diameter / 2,
+                     diameter, diameter, SWP_NOACTIVATE | SWP_NOZORDER);
+        if (icon_.ready()) {
+            icon_.RenderLayered(handle(), 255);
+        } else {
+            SetWindowRgn(handle(), CreateEllipticRgn(0, 0, diameter, diameter), TRUE);
+        }
+    }
+
     std::wstring title_;
     IconImage icon_;
     std::function<void()> action_;
     HWND tooltip_ = nullptr;
+    int center_x_ = 0;
+    int center_y_ = 0;
+    int default_size_ = kDefaultLogicalSize;
+    int hovered_size_ = kHoveredLogicalSize;
+    bool tracking_mouse_ = false;
+    bool expanded_ = false;
 };
 
 FeatureMenu::FeatureMenu() = default;
@@ -131,7 +191,8 @@ bool FeatureMenu::Add(std::wstring title, const wchar_t* icon_filename, std::fun
 }
 
 void FeatureMenu::ShowAround(RECT orb, const platform::Monitor& monitor, UINT dpi) {
-    const int size = platform::Scale(82, dpi);
+    const int size = platform::Scale(kHoveredLogicalSize, dpi);
+    const int default_size = platform::Scale(kDefaultLogicalSize, dpi);
     const int gap = platform::Scale(24, dpi);
     const int center_x = (orb.left + orb.right) / 2;
     const int center_y = (orb.top + orb.bottom) / 2;
@@ -142,7 +203,7 @@ void FeatureMenu::ShowAround(RECT orb, const platform::Monitor& monitor, UINT dp
                                  static_cast<int>(monitor.work.left), static_cast<int>(monitor.work.right - size));
         const int y = std::clamp(center_y + offset - size / 2, static_cast<int>(monitor.work.top),
                                  static_cast<int>(monitor.work.bottom - size));
-        buttons_[index]->Position(x, y, size);
+        buttons_[index]->Position(x + size / 2, y + size / 2, default_size, size);
         buttons_[index]->EnableTooltip();
         ShowWindow(buttons_[index]->handle(), SW_SHOWNOACTIVATE);
     }
@@ -154,6 +215,7 @@ void FeatureMenu::Hide() {
     for (const auto& button : buttons_) {
         button->DismissTooltip();
         ShowWindow(button->handle(), SW_HIDE);
+        button->ResetHover();
     }
     visible_ = false;
 }
