@@ -1,3 +1,5 @@
+// 文件职责：定位和读写 INI 设置，并解析全局快捷键文本。
+// 本模块不注册快捷键；注册失败的交互反馈由 App 负责。
 #include "desktop_orb/platform/settings.hpp"
 
 #include <algorithm>
@@ -7,6 +9,9 @@
 namespace desktop_orb::platform {
 namespace {
 
+// 作用：读取 INI 中的单个字符串配置。
+// 参数：path 为配置文件；section 为分组；key 为键；fallback 为缺失时默认值。
+// 返回：读取到的宽字符串，最多保留缓冲区可容纳的内容。
 std::wstring ReadValue(const std::filesystem::path& path, const wchar_t* section,
                        const wchar_t* key, const wchar_t* fallback) {
     wchar_t buffer[256]{};
@@ -14,6 +19,8 @@ std::wstring ReadValue(const std::filesystem::path& path, const wchar_t* section
     return buffer;
 }
 
+// 作用：去除首尾空白并转为大写，以便快捷键名称不区分大小写。
+// 参数：value 为待规范化文本。返回：规范化文本；全空白时为空。
 std::wstring UpperTrim(std::wstring value) {
     const auto first = value.find_first_not_of(L" \t");
     if (first == std::wstring::npos) return {};
@@ -23,7 +30,7 @@ std::wstring UpperTrim(std::wstring value) {
     return value;
 }
 
-}  // namespace
+}  // 匿名命名空间结束
 
 SettingsStore::SettingsStore() {
     wchar_t appdata[32768]{};
@@ -89,4 +96,4 @@ std::optional<Hotkey> SettingsStore::ParseHotkey(const std::wstring& text) {
     return result;
 }
 
-}  // namespace desktop_orb::platform
+}  // desktop_orb::platform 命名空间结束

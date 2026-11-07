@@ -1,3 +1,5 @@
+// 文件职责：协调悬浮球、功能菜单和窗口面板的状态转换。
+// UI 组件由 App 持有；平台服务负责窗口枚举、设置和显示器信息。
 #include "desktop_orb/app.hpp"
 
 #include "desktop_orb/platform/monitor.hpp"
@@ -9,21 +11,27 @@ namespace {
 
 constexpr int kHotkeyId = 1;
 
+// 作用：判断屏幕点是否落在矩形内部。
+// 参数：rect 为屏幕矩形；point 为屏幕点。返回：在矩形内为 true，否则为 false。
 bool Contains(RECT rect, POINT point) {
     return point.x >= rect.left && point.x < rect.right && point.y >= rect.top && point.y < rect.bottom;
 }
 
+// 作用：读取窗口屏幕矩形，供面板外点击判断。
+// 参数：window 为目标 HWND。返回：窗口矩形；系统调用失败时为零矩形。
 RECT Bounds(HWND window) {
     RECT result{};
     GetWindowRect(window, &result);
     return result;
 }
 
+// 作用：显示不阻断应用继续运行的警告。
+// 参数：owner 为所属窗口；title 为标题；text 为警告内容。返回：无。
 void Warn(HWND owner, const wchar_t* title, const wchar_t* text) {
     MessageBoxW(owner, text, title, MB_OK | MB_ICONWARNING);
 }
 
-}  // namespace
+}  // 匿名命名空间结束
 
 App::App() : panel_(catalog_) {}
 
@@ -173,4 +181,4 @@ void App::ShowContextMenu() {
     }
 }
 
-}  // namespace desktop_orb
+}  // desktop_orb 命名空间结束

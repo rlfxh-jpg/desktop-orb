@@ -1,3 +1,5 @@
+// 文件职责：枚举和筛选 Windows 应用窗口，维护最近使用顺序并请求切换。
+// HWND 仅作临时标识；窗口可能随时失效，激活时再次检查有效性。
 #include "desktop_orb/platform/window_catalog.hpp"
 
 #include "desktop_orb/platform/monitor.hpp"
@@ -7,12 +9,16 @@
 namespace desktop_orb::platform {
 namespace {
 
+// 作用：收集 EnumWindows 回调提供的顶层窗口句柄。
+// 参数：window 为当前 HWND；data 指向句柄列表。返回：TRUE 表示继续枚举。
 BOOL CALLBACK CollectWindow(HWND window, LPARAM data) {
     auto* handles = reinterpret_cast<std::vector<HWND>*>(data);
     handles->push_back(window);
     return TRUE;
 }
 
+// 作用：读取窗口标题并裁去未使用的缓冲区。
+// 参数：window 为目标 HWND。返回：标题；无标题或读取失败时为空。
 std::wstring Title(HWND window) {
     const int length = GetWindowTextLengthW(window);
     if (length <= 0) return {};
@@ -22,6 +28,9 @@ std::wstring Title(HWND window) {
     return title;
 }
 
+// 作用：按任务切换规则筛选普通应用窗口。
+// 参数：window 为候选 HWND；excluded 为本程序等需要排除的句柄。
+// 返回：可切换为 true；隐藏、辅助或系统窗口等情况为 false。
 bool IsSwitchable(HWND window, const std::vector<HWND>& excluded) {
     if (!window || window == GetShellWindow() || !IsWindowVisible(window)) return false;
     if (std::find(excluded.begin(), excluded.end(), window) != excluded.end()) return false;
@@ -38,7 +47,7 @@ bool IsSwitchable(HWND window, const std::vector<HWND>& excluded) {
     return true;
 }
 
-}  // namespace
+}  // 匿名命名空间结束
 
 void WindowCatalog::ObserveForeground() {
     const HWND current = GetForegroundWindow();
@@ -77,4 +86,4 @@ bool WindowCatalog::Activate(HWND window) {
     return SetForegroundWindow(window) != FALSE;
 }
 
-}  // namespace desktop_orb::platform
+}  // desktop_orb::platform 命名空间结束

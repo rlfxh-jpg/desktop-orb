@@ -1,3 +1,5 @@
+// 文件职责：管理窗口切换面板中的 DWM 实时缩略图句柄和裁切区域。
+// 每个注册句柄由 ThumbnailManager 独占，移出视口或销毁时注销。
 #include "desktop_orb/platform/thumbnail_manager.hpp"
 
 #include <algorithm>
@@ -6,12 +8,16 @@
 namespace desktop_orb::platform {
 namespace {
 
+// 作用：计算两个矩形交集并写入输出参数。
+// 参数：a、b 为待求交矩形；output 接收交集。返回：交集有面积为 true，否则为 false。
 bool Intersect(const RECT& a, const RECT& b, RECT& output) {
     output = {std::max(a.left, b.left), std::max(a.top, b.top),
               std::min(a.right, b.right), std::min(a.bottom, b.bottom)};
     return output.right > output.left && output.bottom > output.top;
 }
 
+// 作用：按原始窗口宽高比将画面放入预览矩形。
+// 参数：bounds 为预览区域；source 为源窗口尺寸。返回：居中且不拉伸的目标矩形。
 RECT Fit(const RECT& bounds, SIZE source) {
     const int width = bounds.right - bounds.left;
     const int height = bounds.bottom - bounds.top;
@@ -26,7 +32,7 @@ RECT Fit(const RECT& bounds, SIZE source) {
     return {x, y, x + fitted_width, y + fitted_height};
 }
 
-}  // namespace
+}  // 匿名命名空间结束
 
 ThumbnailManager::~ThumbnailManager() { Clear(); }
 
@@ -96,4 +102,4 @@ void ThumbnailManager::Sync(const std::vector<ThumbnailRequest>& visible) {
     }
 }
 
-}  // namespace desktop_orb::platform
+}  // desktop_orb::platform 命名空间结束

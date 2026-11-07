@@ -1,3 +1,5 @@
+// 文件职责：创建环绕悬浮球的功能按钮窗口，并负责其布局和显示。
+// 菜单持有按钮，业务动作通过调用方提供的回调执行。
 #include "desktop_orb/ui/feature_menu.hpp"
 
 #include "desktop_orb/ui/drawing.hpp"
@@ -7,9 +9,13 @@ namespace desktop_orb::ui {
 
 class FeatureMenu::Button final : public WindowBase {
 public:
+    // 作用：保存按钮标题和点击动作。
+    // 参数：title 为按钮文字；action 为点击回调。返回：无。
     Button(std::wstring title, std::function<void()> action)
         : title_(std::move(title)), action_(std::move(action)) {}
 
+    // 作用：创建初始隐藏的圆形功能按钮窗口。
+    // 参数：无。返回：创建成功为 true，Win32 创建失败为 false。
     bool Create() {
         if (!CreateNative(L"DesktopOrbFeature", title_.c_str(), WS_POPUP,
                           WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
@@ -18,12 +24,17 @@ public:
         return true;
     }
 
+    // 作用：调整按钮位置和圆形点击区域。
+    // 参数：x、y 为屏幕坐标；size 为直径像素。返回：无。
     void Position(int x, int y, int size) {
         SetWindowPos(handle(), HWND_TOPMOST, x, y, size, size, SWP_NOACTIVATE);
         SetWindowRgn(handle(), CreateEllipticRgn(0, 0, size, size), TRUE);
     }
 
 protected:
+    // 作用：处理按钮绘制与点击，其他消息交给基类。
+    // 参数：message 为消息码；wparam、lparam 为消息数据。
+    // 返回：已处理时为 0，否则为基类消息处理结果。
     LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) override {
         if (message == WM_PAINT) {
             PAINTSTRUCT paint{};
@@ -99,4 +110,4 @@ std::vector<HWND> FeatureMenu::Handles() const {
     return handles;
 }
 
-}  // namespace desktop_orb::ui
+}  // desktop_orb::ui 命名空间结束

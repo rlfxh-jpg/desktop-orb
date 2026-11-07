@@ -1,3 +1,5 @@
+// 文件职责：控制悬浮球的置顶窗口、拖动吸边、透明度和输入事件。
+// 图标像素由 OrbArtwork 绘制，功能菜单及面板状态由 App 回调协调。
 #include "desktop_orb/ui/orb_window.hpp"
 
 #include "desktop_orb/platform/monitor.hpp"
@@ -51,7 +53,7 @@ void OrbWindow::SnapToEdge() {
 
 LRESULT OrbWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
-        // UpdateLayeredWindow supplies the pixels directly; clear only the paint request.
+        // 核心逻辑：UpdateLayeredWindow 已直接提交像素，此处只清除绘制请求。
         case WM_PAINT: ValidateRect(handle(), nullptr); return 0;
         case WM_LBUTTONDOWN:
             GetCursorPos(&drag_cursor_);
@@ -98,4 +100,4 @@ LRESULT OrbWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
     }
 }
 
-}  // namespace desktop_orb::ui
+}  // desktop_orb::ui 命名空间结束

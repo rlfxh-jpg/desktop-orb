@@ -1,3 +1,5 @@
+// 文件职责：通过全局命名互斥锁检查是否已有悬浮球实例。
+// 成功获取的 HANDLE 由 SingleInstance 持有，并在析构时关闭。
 #include "desktop_orb/platform/single_instance.hpp"
 
 namespace desktop_orb::platform {
@@ -17,7 +19,7 @@ SingleInstance::SingleInstance() {
             result_ = Result::acquired;
         }
     } else if (error_code_ == ERROR_ACCESS_DENIED) {
-        // Another user/session may own the global mutex without granting access.
+        // 核心逻辑：其他登录会话可能已持有全局互斥锁，但拒绝当前会话访问。
         result_ = Result::already_running;
     }
 }
@@ -26,4 +28,4 @@ SingleInstance::~SingleInstance() {
     if (mutex_) CloseHandle(mutex_);
 }
 
-}  // namespace desktop_orb::platform
+}  // desktop_orb::platform 命名空间结束

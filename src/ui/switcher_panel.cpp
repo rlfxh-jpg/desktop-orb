@@ -1,3 +1,5 @@
+// 文件职责：展示所有显示器上的应用窗口列表，处理滚动、选择和缩略图同步。
+// 面板拥有 DWM 缩略图管理器；应用窗口句柄只在使用前验证有效性。
 #include "desktop_orb/ui/switcher_panel.hpp"
 
 #include "desktop_orb/ui/drawing.hpp"
@@ -15,13 +17,15 @@ constexpr int kLogicalCard = 262;
 constexpr int kLogicalPreviewHeight = 180;
 constexpr int kLogicalPadding = 16;
 
+// 作用：获取应用窗口提供的小图标或窗口类图标。
+// 参数：window 为源窗口 HWND。返回：借用的 HICON；窗口未提供图标时为空。
 HICON WindowIcon(HWND window) {
     HICON icon = reinterpret_cast<HICON>(SendMessageW(window, WM_GETICON, ICON_SMALL2, 0));
     if (!icon) icon = reinterpret_cast<HICON>(GetClassLongPtrW(window, GCLP_HICONSM));
     return icon;
 }
 
-}  // namespace
+}  // 匿名命名空间结束
 
 bool SwitcherPanel::Create() {
     if (!CreateNative(L"DesktopOrbSwitcher", L"窗口切换", WS_POPUP | WS_VSCROLL,
@@ -249,4 +253,4 @@ LRESULT SwitcherPanel::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam)
     }
 }
 
-}  // namespace desktop_orb::ui
+}  // desktop_orb::ui 命名空间结束
