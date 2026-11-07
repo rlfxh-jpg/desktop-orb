@@ -1,8 +1,8 @@
 // 文件职责：计算环绕菜单的入口位置，保证放大后的按钮互不遮挡并留在显示器工作区。
 // 优先使用朝屏幕内侧的圆弧；可用高度不足时排成多列，且不持有窗口资源。
-#include "desktop_orb/ui/feature_layout.hpp"
+#include "desktop_orb/ui/common/feature_layout.hpp"
 
-#include "desktop_orb/platform/monitor.hpp"
+#include "desktop_orb/platform/common/monitor.hpp"
 #include <algorithm>
 #include <cmath>
 #include <numbers>

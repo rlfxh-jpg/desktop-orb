@@ -1,7 +1,7 @@
 // 文件职责：程序入口负责系统级单实例检查、界面初始化和消息循环。
 // 启动阶段的错误通过对话框反馈，因为 GUI 程序没有附加控制台。
 #include "desktop_orb/app.hpp"
-#include "desktop_orb/platform/single_instance.hpp"
+#include "desktop_orb/platform/common/single_instance.hpp"
 
 // 作用：启动桌面悬浮球并进入 Win32 消息循环。
 // 参数：四个 WinMain 参数由 Windows 提供，本程序当前不使用其值。

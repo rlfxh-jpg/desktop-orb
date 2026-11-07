@@ -1,8 +1,8 @@
 // 文件职责：枚举和筛选 Windows 应用窗口，维护最近使用顺序并请求切换。
 // HWND 仅作临时标识；窗口可能随时失效，激活时再次检查有效性。
-#include "desktop_orb/platform/window_catalog.hpp"
+#include "desktop_orb/platform/window_switcher/window_catalog.hpp"
 
-#include "desktop_orb/platform/monitor.hpp"
+#include "desktop_orb/platform/common/monitor.hpp"
 #include <algorithm>
 #include <dwmapi.h>
 

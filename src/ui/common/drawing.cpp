@@ -1,6 +1,6 @@
 // 文件职责：实现 UI 共用的 GDI 绘制辅助函数。
 // 调用方持有 HDC；本模块负责释放自身创建的画笔、字体和画刷。
-#include "desktop_orb/ui/drawing.hpp"
+#include "desktop_orb/ui/common/drawing.hpp"
 
 namespace desktop_orb::ui {
 

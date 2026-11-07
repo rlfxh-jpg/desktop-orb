@@ -1,8 +1,8 @@
 // 文件职责：控制悬浮球的置顶窗口、拖动吸边、透明度和输入事件。
 // 图标像素由 OrbArtwork 绘制，功能菜单及面板状态由 App 回调协调。
-#include "desktop_orb/ui/orb_window.hpp"
+#include "desktop_orb/ui/common/orb_window.hpp"
 
-#include "desktop_orb/platform/monitor.hpp"
+#include "desktop_orb/platform/common/monitor.hpp"
 #include <algorithm>
 
 namespace desktop_orb::ui {

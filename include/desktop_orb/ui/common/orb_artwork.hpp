@@ -2,7 +2,7 @@
 
 // 文件职责：将悬浮球图标合成到 Win32 分层窗口；PNG 加载由 IconImage 负责。
 // 本模块只拥有图标对象，不拥有传入的 HWND。
-#include "desktop_orb/ui/icon_image.hpp"
+#include "desktop_orb/ui/common/icon_image.hpp"
 #include <windows.h>
 
 namespace desktop_orb::ui {

@@ -1,8 +1,8 @@
 // 文件职责：从部署目录加载 PNG，并集中管理 GDI+ 初始化和图片解码资源。
 // 普通窗口绘制与分层窗口像素输出共用同一份解码结果；分层绘制的 GDI 资源即用即释放。
-#include "desktop_orb/ui/icon_image.hpp"
+#include "desktop_orb/ui/common/icon_image.hpp"
 
-#include "desktop_orb/platform/asset_path.hpp"
+#include "desktop_orb/platform/common/asset_path.hpp"
 #include <objidl.h>
 #include <gdiplus.h>
 #include <climits>

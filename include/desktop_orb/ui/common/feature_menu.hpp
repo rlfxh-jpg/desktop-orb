@@ -2,8 +2,8 @@
 
 // 文件职责：管理围绕悬浮球显示的功能按钮及其点击回调。
 // 按钮窗口由菜单对象持有，具体功能由外部回调实现。
-#include "desktop_orb/platform/monitor.hpp"
-#include "desktop_orb/ui/window_base.hpp"
+#include "desktop_orb/platform/common/monitor.hpp"
+#include "desktop_orb/ui/common/window_base.hpp"
 #include <functional>
 #include <memory>
 #include <string>

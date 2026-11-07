@@ -1,6 +1,6 @@
 // 文件职责：实现 Win32 窗口注册、创建、销毁和消息向对象实例的分发。
 // WindowBase 持有 HWND；系统回调在 WM_NCCREATE 后才访问实例指针。
-#include "desktop_orb/ui/window_base.hpp"
+#include "desktop_orb/ui/common/window_base.hpp"
 
 namespace desktop_orb::ui {
 

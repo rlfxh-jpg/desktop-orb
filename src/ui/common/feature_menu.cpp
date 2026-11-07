@@ -1,10 +1,10 @@
 // 文件职责：创建环绕悬浮球的图标按钮，负责悬停缩放、布局、绘制及延迟显示名称提示。
 // 菜单持有按钮；每个按钮持有自己的 Tooltip 窗口，业务动作由调用方回调执行。
-#include "desktop_orb/ui/feature_menu.hpp"
+#include "desktop_orb/ui/common/feature_menu.hpp"
 
-#include "desktop_orb/ui/drawing.hpp"
-#include "desktop_orb/ui/feature_layout.hpp"
-#include "desktop_orb/ui/icon_image.hpp"
+#include "desktop_orb/ui/common/drawing.hpp"
+#include "desktop_orb/ui/common/feature_layout.hpp"
+#include "desktop_orb/ui/common/icon_image.hpp"
 #include <algorithm>
 #include <commctrl.h>
 

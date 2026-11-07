@@ -6,21 +6,21 @@ project(desktop_orb VERSION 0.1.0 LANGUAGES CXX)
 add_executable(desktop-orb WIN32
     src/main.cpp
     src/app.cpp
-    src/platform/monitor.cpp
-    src/platform/asset_path.cpp
-    src/platform/single_instance.cpp
-    src/platform/settings.cpp
-    src/platform/window_catalog.cpp
-    src/platform/thumbnail_manager.cpp
-    src/platform/screenshot_service.cpp
-    src/ui/window_base.cpp
-    src/ui/drawing.cpp
-    src/ui/icon_image.cpp
-    src/ui/orb_artwork.cpp
-    src/ui/orb_window.cpp
-    src/ui/feature_layout.cpp
-    src/ui/feature_menu.cpp
-    src/ui/switcher_panel.cpp
+    src/platform/common/monitor.cpp
+    src/platform/common/asset_path.cpp
+    src/platform/common/single_instance.cpp
+    src/platform/common/settings.cpp
+    src/platform/window_switcher/window_catalog.cpp
+    src/platform/window_switcher/thumbnail_manager.cpp
+    src/platform/screenshot/screenshot_service.cpp
+    src/ui/common/window_base.cpp
+    src/ui/common/drawing.cpp
+    src/ui/common/icon_image.cpp
+    src/ui/common/orb_artwork.cpp
+    src/ui/common/orb_window.cpp
+    src/ui/common/feature_layout.cpp
+    src/ui/common/feature_menu.cpp
+    src/ui/window_switcher/switcher_panel.cpp
 )
 
 target_include_directories(desktop-orb PRIVATE include)
@@ -45,8 +45,8 @@ include(CTest)
 if(BUILD_TESTING)
     add_executable(feature-layout-test
         tests/feature_layout_test.cpp
-        src/ui/feature_layout.cpp
-        src/platform/monitor.cpp
+        src/ui/common/feature_layout.cpp
+        src/platform/common/monitor.cpp
     )
     target_include_directories(feature-layout-test PRIVATE include)
     target_compile_features(feature-layout-test PRIVATE cxx_std_20)

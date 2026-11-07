@@ -1,6 +1,6 @@
 // 文件职责：管理窗口切换面板中的 DWM 实时缩略图句柄和裁切区域。
 // 每个注册句柄由 ThumbnailManager 独占，移出视口或销毁时注销。
-#include "desktop_orb/platform/thumbnail_manager.hpp"
+#include "desktop_orb/platform/window_switcher/thumbnail_manager.hpp"
 
 #include <algorithm>
 #include <unordered_set>

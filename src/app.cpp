@@ -2,7 +2,7 @@
 // UI 组件由 App 持有；平台服务负责窗口枚举、设置和显示器信息。
 #include "desktop_orb/app.hpp"
 
-#include "desktop_orb/platform/monitor.hpp"
+#include "desktop_orb/platform/common/monitor.hpp"
 #include <algorithm>
 #include <shellapi.h>
 

@@ -2,8 +2,8 @@
 
 // 文件职责：管理悬浮球原生窗口、拖动吸边、透明度和输入事件。
 // 图标绘制委托 OrbArtwork，业务状态转换由 App 回调处理。
-#include "desktop_orb/ui/orb_artwork.hpp"
-#include "desktop_orb/ui/window_base.hpp"
+#include "desktop_orb/ui/common/orb_artwork.hpp"
+#include "desktop_orb/ui/common/window_base.hpp"
 #include <functional>
 
 namespace desktop_orb::ui {

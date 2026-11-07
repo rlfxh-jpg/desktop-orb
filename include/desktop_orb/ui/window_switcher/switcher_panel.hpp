@@ -2,10 +2,10 @@
 
 // 文件职责：管理跨显示器窗口列表、滚动选择及实时缩略图面板。
 // 窗口枚举与激活委托平台层，关闭事件通过回调通知 App。
-#include "desktop_orb/platform/monitor.hpp"
-#include "desktop_orb/platform/thumbnail_manager.hpp"
-#include "desktop_orb/platform/window_catalog.hpp"
-#include "desktop_orb/ui/window_base.hpp"
+#include "desktop_orb/platform/common/monitor.hpp"
+#include "desktop_orb/platform/window_switcher/thumbnail_manager.hpp"
+#include "desktop_orb/platform/window_switcher/window_catalog.hpp"
+#include "desktop_orb/ui/common/window_base.hpp"
 #include <functional>
 #include <memory>
 #include <vector>

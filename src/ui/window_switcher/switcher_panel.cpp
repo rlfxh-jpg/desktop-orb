@@ -1,8 +1,8 @@
 // 文件职责：展示所有显示器上的应用窗口列表，处理滚动、选择和缩略图同步。
 // 面板拥有 DWM 缩略图管理器；应用窗口句柄只在使用前验证有效性。
-#include "desktop_orb/ui/switcher_panel.hpp"
+#include "desktop_orb/ui/window_switcher/switcher_panel.hpp"
 
-#include "desktop_orb/ui/drawing.hpp"
+#include "desktop_orb/ui/common/drawing.hpp"
 #include <algorithm>
 #include <climits>
 #include <string>

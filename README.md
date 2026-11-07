@@ -28,9 +28,12 @@ Settings are stored at `%APPDATA%\DesktopOrb\settings.ini`. Change `Hotkey` to a
 
 ## Source layout
 
-- `app`: coordinates the orb, feature menu and switcher.
-- `platform`: Windows monitors, settings, application windows, DWM thumbnails and desktop capture.
-- `ui`: native window lifecycle, drawing and the three interface components.
+- `app`: composes shared UI and feature modules.
+- `platform/common`: shared monitor, settings, asset path and single-instance support.
+- `platform/window_switcher`: window discovery, activation and DWM thumbnails.
+- `platform/screenshot`: virtual desktop capture, PNG output and clipboard integration.
+- `ui/common`: floating orb, shared window lifecycle, drawing, icon loading and feature menu.
+- `ui/window_switcher`: the window switcher panel and its interactions.
 - `assets/icons`: runtime PNG images. Add a lowercase, underscore-separated PNG here and build.
 
 ## Adding an icon

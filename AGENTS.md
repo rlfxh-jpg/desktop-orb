@@ -8,9 +8,12 @@
 
 ## 分层与模块
 
-- `src/app.cpp` 与 `include/desktop_orb/app.hpp` 是应用协调层：管理悬浮球、功能菜单和面板之间的状态转换，以及功能模块的启动和关闭。不要在这里堆积窗口筛选、缩略图绘制或配置解析细节。
-- `src/ui/` 与 `include/desktop_orb/ui/` 是界面层：处理 Win32 窗口生命周期、输入事件、布局和绘制。界面组件通过明确的接口接收数据和回调，不直接实现领域规则或持久化。
-- `src/platform/` 与 `include/desktop_orb/platform/` 是平台适配层：封装窗口枚举与激活、显示器、DWM 缩略图、系统级单实例锁和配置读写。Win32 句柄及系统错误尽量停留在这一层或必要的 UI 边界。
+- `src/app.cpp` 与 `include/desktop_orb/app.hpp` 是应用协调层：组合公共组件和功能模块，管理状态转换及模块生命周期。不要在这里堆积窗口筛选、缩略图绘制或配置解析细节。
+- `src/ui/common/` 与 `include/desktop_orb/ui/common/` 放悬浮球、通用窗口基类、绘制、图标加载和功能菜单等共享界面代码。
+- `src/ui/window_switcher/` 与 `include/desktop_orb/ui/window_switcher/` 只放窗口切换面板及其专属交互代码。
+- `src/platform/common/` 与 `include/desktop_orb/platform/common/` 放显示器、资源路径、单实例和设置等共享平台能力。
+- `src/platform/window_switcher/` 与 `include/desktop_orb/platform/window_switcher/` 放窗口枚举、激活和 DWM 缩略图等窗口切换专属平台能力。
+- `src/platform/screenshot/` 与 `include/desktop_orb/platform/screenshot/` 放桌面采集、图片保存和剪贴板操作等截图专属平台能力。
 - 后续出现与 Windows API 无关的领域对象或规则时，放入 `domain/` 对应的头文件与源文件。领域对象表达业务含义、状态和不变量，不依赖 `HWND`、绘图或配置文件格式。不要仅为增加一个目录而迁移现有简单数据类型。
 - 一个模块只承担一类清晰职责。新增功能先定义数据、行为和边界，再接入功能菜单；避免让功能模块相互直接操作内部状态。
 

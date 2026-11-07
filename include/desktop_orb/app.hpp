@@ -2,12 +2,12 @@
 
 // 文件职责：协调悬浮球、环绕菜单和窗口切换面板的状态与生命周期。
 // 平台枚举、图片解码和具体绘制由各自模块负责。
-#include "desktop_orb/platform/settings.hpp"
-#include "desktop_orb/platform/screenshot_service.hpp"
-#include "desktop_orb/platform/window_catalog.hpp"
-#include "desktop_orb/ui/feature_menu.hpp"
-#include "desktop_orb/ui/orb_window.hpp"
-#include "desktop_orb/ui/switcher_panel.hpp"
+#include "desktop_orb/platform/common/settings.hpp"
+#include "desktop_orb/platform/screenshot/screenshot_service.hpp"
+#include "desktop_orb/platform/window_switcher/window_catalog.hpp"
+#include "desktop_orb/ui/common/feature_menu.hpp"
+#include "desktop_orb/ui/common/orb_window.hpp"
+#include "desktop_orb/ui/window_switcher/switcher_panel.hpp"
 
 namespace desktop_orb {
 

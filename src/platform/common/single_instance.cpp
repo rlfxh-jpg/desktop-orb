@@ -1,6 +1,6 @@
 // 文件职责：通过全局命名互斥锁检查是否已有悬浮球实例。
 // 成功获取的 HANDLE 由 SingleInstance 持有，并在析构时关闭。
-#include "desktop_orb/platform/single_instance.hpp"
+#include "desktop_orb/platform/common/single_instance.hpp"
 
 namespace desktop_orb::platform {
 namespace {

@@ -1,6 +1,6 @@
 // 文件职责：实现 Windows 平台的资源路径定位；只负责路径，不负责文件读取。
 // 依赖 GetModuleFileNameW 获取当前 exe 所在位置，供 UI 层加载图片。
-#include "desktop_orb/platform/asset_path.hpp"
+#include "desktop_orb/platform/common/asset_path.hpp"
 
 #include <windows.h>
 #include <string>

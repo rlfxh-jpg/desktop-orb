@@ -1,6 +1,6 @@
 // 文件职责：查询显示器边界和工作区，并提供界面 DPI 缩放计算。
 // 本模块不持有 HMONITOR，仅把系统提供的句柄与矩形打包返回。
-#include "desktop_orb/platform/monitor.hpp"
+#include "desktop_orb/platform/common/monitor.hpp"
 
 #include <algorithm>
 

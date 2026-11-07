@@ -1,6 +1,6 @@
 // 文件职责：定位和读写 INI 设置，并解析全局快捷键文本。
 // 本模块不注册快捷键；注册失败的交互反馈由 App 负责。
-#include "desktop_orb/platform/settings.hpp"
+#include "desktop_orb/platform/common/settings.hpp"
 
 #include <algorithm>
 #include <cwctype>

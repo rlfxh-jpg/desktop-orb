@@ -1,8 +1,8 @@
 // 文件职责：验证环绕菜单在多入口、屏幕边缘和高 DPI 情况下的几何约束。
 // 测试只调用布局函数，不创建实际窗口或修改桌面状态。
-#include "desktop_orb/ui/feature_layout.hpp"
+#include "desktop_orb/ui/common/feature_layout.hpp"
 
-#include "desktop_orb/platform/monitor.hpp"
+#include "desktop_orb/platform/common/monitor.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>

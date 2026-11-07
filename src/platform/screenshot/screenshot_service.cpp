@@ -1,6 +1,6 @@
 // 文件职责：使用 Win32 GDI 捕获所有显示器组成的虚拟桌面，并以 GDI+ 编码 PNG。
 // 文件、设备上下文、位图和 GDI+ 运行时均在单次调用内管理；成功交给剪贴板的位图由系统接管。
-#include "desktop_orb/platform/screenshot_service.hpp"
+#include "desktop_orb/platform/screenshot/screenshot_service.hpp"
 
 #include <windows.h>
 #include <objidl.h>
