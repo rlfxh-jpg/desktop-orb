@@ -46,13 +46,15 @@ void SwitcherPanel::Position() {
     const int work_width = monitor_.work.right - monitor_.work.left;
     const int width = std::min(work_width, platform::Scale(390, GetDpiForWindow(handle())));
     const int height = monitor_.work.bottom - monitor_.work.top;
-    SetWindowPos(handle(), HWND_TOPMOST, monitor_.work.left, monitor_.work.top,
+    const int x = edge_ == Edge::left ? monitor_.work.left : monitor_.work.right - width;
+    SetWindowPos(handle(), HWND_TOPMOST, x, monitor_.work.top,
                  width, height, SWP_NOACTIVATE);
 }
 
-void SwitcherPanel::ShowFor(const platform::Monitor& monitor) {
+void SwitcherPanel::ShowFor(const platform::Monitor& monitor, Edge edge) {
     if (visible_) { Hide(); return; }
     monitor_ = monitor;
+    edge_ = edge;
     active_before_open_ = nullptr;
     selected_ = 0;
     scroll_ = 0;

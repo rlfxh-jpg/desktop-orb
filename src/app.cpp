@@ -44,6 +44,9 @@ bool App::Initialize() {
     excluded.push_back(orb_.handle());
     excluded.push_back(panel_.handle());
     panel_.SetExcluded(std::move(excluded));
+    panel_.on_closed = [this] {
+        ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
+    };
 
     orb_.on_click = [this] { ToggleMenu(); };
     orb_.on_drag_start = [this] { CloseOverlays(); };
@@ -116,10 +119,11 @@ void App::OpenSwitcher() {
     menu_.Hide();
     const RECT bounds = orb_.Bounds();
     const POINT center{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
-    panel_.ShowFor(platform::MonitorAt(center));
-    // Keep the orb reachable when it is attached to the same left edge as the panel.
-    SetWindowPos(orb_.handle(), HWND_TOPMOST, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    const auto monitor = platform::MonitorAt(center);
+    const auto edge = center.x < (monitor.work.left + monitor.work.right) / 2
+        ? ui::SwitcherPanel::Edge::left : ui::SwitcherPanel::Edge::right;
+    panel_.ShowFor(monitor, edge);
+    if (panel_.visible()) ShowWindow(orb_.handle(), SW_HIDE);
 }
 
 void App::CloseOverlays() {

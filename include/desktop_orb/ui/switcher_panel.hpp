@@ -12,12 +12,14 @@ namespace desktop_orb::ui {
 
 class SwitcherPanel final : public WindowBase {
 public:
+    enum class Edge { left, right };
+
     explicit SwitcherPanel(platform::WindowCatalog& catalog) : catalog_(catalog) {}
 
     std::function<void()> on_closed;
     bool Create();
     void SetExcluded(std::vector<HWND> handles);
-    void ShowFor(const platform::Monitor& monitor);
+    void ShowFor(const platform::Monitor& monitor, Edge edge);
     void Hide();
     [[nodiscard]] bool visible() const { return visible_; }
 
@@ -41,6 +43,7 @@ private:
     std::vector<platform::WindowInfo> windows_;
     std::vector<HWND> excluded_;
     platform::Monitor monitor_{};
+    Edge edge_ = Edge::left;
     HWND active_before_open_ = nullptr;
     int scroll_ = 0;
     int wheel_remainder_ = 0;

@@ -5,6 +5,7 @@ add_executable(desktop-orb WIN32
     src/main.cpp
     src/app.cpp
     src/platform/monitor.cpp
+    src/platform/single_instance.cpp
     src/platform/settings.cpp
     src/platform/window_catalog.cpp
     src/platform/thumbnail_manager.cpp

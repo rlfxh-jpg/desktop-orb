@@ -12,11 +12,12 @@ cmake --build build --config Release
 ```
 
 Run `build\Release\desktop-orb.exe`. A floating ball appears at the edge of the primary display.
+Only one instance runs across Windows login sessions. Launching the executable again exits without creating another ball.
 
 ## Controls
 
 - Click the ball to show its feature menu; drag it to another edge or monitor.
-- Click **窗口切换** to open the live window list on the left edge of the ball's display.
+- Click **窗口切换** to open the live window list on the same edge as the ball. The ball hides while the list is open and returns when it closes.
 - Scroll the list, then click a window to activate it. `Esc` closes the menu or list.
 - The default global shortcut is `Ctrl+Alt+Space`.
 - Right-click the ball to open or reload the settings file, or exit.
