@@ -28,10 +28,10 @@ target_compile_definitions(desktop-orb PRIVATE UNICODE _UNICODE NOMINMAX WIN32_L
 target_link_libraries(desktop-orb PRIVATE dwmapi gdi32 user32 shell32 gdiplus comctl32)
 
 # 核心逻辑：收集所有 PNG 并在每次构建时复制，新增图片无需修改此文件。
-file(GLOB ICON_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/icon/*.png")
+file(GLOB ICON_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/*.png")
 add_custom_target(copy_icons ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:desktop-orb>/assets/icon"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ICON_FILES} "$<TARGET_FILE_DIR:desktop-orb>/assets/icon"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:desktop-orb>/assets/icons"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ICON_FILES} "$<TARGET_FILE_DIR:desktop-orb>/assets/icons"
     DEPENDS desktop-orb ${ICON_FILES}
     VERBATIM
 )

@@ -12,7 +12,7 @@ cmake --build build --config Release
 ```
 
 Run `build\Release\desktop-orb.exe`. A floating ball appears at the edge of the primary display.
-The build copies `src/icon/*.png` to `build\Release\assets\icon\`. Keep the `assets` directory beside the exe when distributing or moving it.
+The build copies `assets/icons/*.png` to `build\Release\assets\icons\`. Keep the `assets` directory beside the exe when distributing or moving it.
 Only one instance runs across Windows login sessions. Launching the executable again exits without creating another ball.
 
 ## Controls
@@ -30,8 +30,8 @@ Settings are stored at `%APPDATA%\DesktopOrb\settings.ini`. Change `Hotkey` to a
 - `app`: coordinates the orb, feature menu and switcher.
 - `platform`: Windows monitors, settings, application windows and DWM thumbnails.
 - `ui`: native window lifecycle, drawing and the three interface components.
-- `src/icon`: runtime PNG images. Add a lowercase, underscore-separated PNG here and build.
+- `assets/icons`: runtime PNG images. Add a lowercase, underscore-separated PNG here and build.
 
 ## Adding an icon
 
-Put the final PNG in `src/icon/`. In the UI object, keep an `IconImage` initialized with its filename, check `ready()`, then call `Draw(dc, bounds)` while painting. `OrbArtwork` uses `Rasterize()` for its layered window. Build again to copy the image beside the executable; no resource IDs or CMake edits are needed.
+Put the final PNG in `assets/icons/`. In the UI object, keep an `IconImage` initialized with its filename, check `ready()`, then call `Draw(dc, bounds)` while painting. `OrbArtwork` uses `Rasterize()` for its layered window. Build again to copy the image beside the executable; no resource IDs or CMake edits are needed.

@@ -10,7 +10,7 @@ namespace desktop_orb::ui {
 // 生命周期：作为界面对象的成员保存，不在每次 WM_PAINT 时重新读取文件。
 class IconImage final {
 public:
-    // 作用：从 assets/icon 加载并解码一个 PNG 图标。
+    // 作用：从 assets/icons 加载并解码一个 PNG 图标。
     // 参数：filename 为图标文件名，不含目录；空值、缺失或无效图片将使 ready() 为 false。
     // 返回：无；构造失败不抛出资源错误，由调用方检查 ready() 并选择降级行为。
     explicit IconImage(const wchar_t* filename);

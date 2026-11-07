@@ -43,11 +43,11 @@ struct IconImage::Impl {
     std::unique_ptr<Gdiplus::Bitmap> bitmap;
 
     // 作用：按文件名加载一次 PNG，并保存解码结果。
-    // 参数：filename 为 assets/icon 下的文件名。返回：无；失败时 bitmap 为空。
+    // 参数：filename 为 assets/icons 下的文件名。返回：无；失败时 bitmap 为空。
     // 核心约束：GDI+ 可能持续占用源文件，替换图片需重启程序后生效。
     explicit Impl(const wchar_t* filename) {
         if (!filename || !*filename || !Runtime().token) return;
-        std::wstring relative = L"icon/";
+        std::wstring relative = L"icons/";
         relative += filename;
         const auto path = platform::AssetPath(relative);
         if (path.empty()) return;
