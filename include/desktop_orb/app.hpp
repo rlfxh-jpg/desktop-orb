@@ -3,6 +3,7 @@
 // 文件职责：协调悬浮球、环绕菜单和窗口切换面板的状态与生命周期。
 // 平台枚举、图片解码和具体绘制由各自模块负责。
 #include "desktop_orb/platform/settings.hpp"
+#include "desktop_orb/platform/screenshot_service.hpp"
 #include "desktop_orb/platform/window_catalog.hpp"
 #include "desktop_orb/ui/feature_menu.hpp"
 #include "desktop_orb/ui/orb_window.hpp"
@@ -29,6 +30,9 @@ private:
     void ToggleMenu();
     // 作用：在悬浮球所在显示器的同侧打开窗口切换面板。参数：无。返回：无。
     void OpenSwitcher();
+    // 作用：暂时隐藏悬浮球，截取整个虚拟桌面并保存、复制到剪贴板。
+    // 参数：无。返回：无；失败时恢复悬浮球并显示错误信息。
+    void CaptureScreenshot();
     // 作用：关闭菜单和预览面板并恢复悬浮球。参数：无。返回：无。
     void CloseOverlays();
     // 作用：显示设置与退出命令的右键菜单。参数：无。返回：无。
@@ -44,6 +48,7 @@ private:
     platform::SettingsStore settings_store_;
     platform::Settings settings_;
     platform::WindowCatalog catalog_;
+    platform::ScreenshotService screenshot_service_;
     ui::OrbWindow orb_;
     ui::FeatureMenu menu_;
     ui::SwitcherPanel panel_;

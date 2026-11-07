@@ -35,6 +35,7 @@
 - CMake 自动把 `assets/icons/*.png` 复制到可执行文件旁的 `assets/icons/`。新增图片不需要修改 CMake 或生成资源 ID；发布时必须把 `assets/` 与 exe 一起分发。
 - UI 代码使用 `ui::IconImage image{L"文件名.png"}` 加载，先检查 `image.ready()`，再调用 `Draw(dc, bounds)` 绘制。透明分层窗口可调用 `Rasterize(...)`。不要在各界面重复实现路径解析、GDI+ 初始化或 PNG 解码；只有其他类型的资源需要直接调用 `platform::AssetPath(...)`。
 - 图片应在界面对象创建时加载一次并随界面对象释放，不要在每次 `WM_PAINT` 中重新打开文件。缺图或解码失败时提供可理解的反馈或降级行为。
+- 图标文件按功能含义命名；新增功能前先将交付图放入 `assets/icons/` 并使用对应的英文名称，例如 `screenshot.png`，代码通过 `IconImage` 引用文件名。
 - 修改或新增图片后运行 Release 构建，确认输出目录中的图片已更新，并检查实际显示效果。
 
 ## 可维护性与验证

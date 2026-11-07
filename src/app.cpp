@@ -48,6 +48,7 @@ bool App::Initialize() {
     if (!orb_.Create(initial) || !panel_.Create()) return false;
     orb_.SnapToEdge();
     if (!menu_.Add(L"窗口切换", L"window_switcher.png", [this] { OpenSwitcher(); })) return false;
+    if (!menu_.Add(L"截图", L"screenshot.png", [this] { CaptureScreenshot(); })) return false;
     auto excluded = menu_.Handles();
     excluded.push_back(orb_.handle());
     excluded.push_back(panel_.handle());
@@ -132,6 +133,21 @@ void App::OpenSwitcher() {
         ? ui::SwitcherPanel::Edge::left : ui::SwitcherPanel::Edge::right;
     panel_.ShowFor(monitor, edge);
     if (panel_.visible()) ShowWindow(orb_.handle(), SW_HIDE);
+}
+
+void App::CaptureScreenshot() {
+    ShowWindow(orb_.handle(), SW_HIDE);
+    // 核心逻辑：等待 DWM 完成悬浮球隐藏，避免将自身界面残影写入截图。
+    Sleep(100);
+    const auto result = screenshot_service_.CaptureAllDisplays();
+    ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
+    if (!result.saved) {
+        Warn(orb_.handle(), L"截图失败", result.error.c_str());
+        return;
+    }
+    if (!result.copied_to_clipboard) {
+        Warn(orb_.handle(), L"截图已保存", L"截图已保存，但复制到剪贴板失败。文件位置：图片\\DesktopOrb");
+    }
 }
 
 void App::CloseOverlays() {
