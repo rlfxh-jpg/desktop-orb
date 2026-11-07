@@ -18,9 +18,10 @@ public:
     // 作用：销毁菜单持有的按钮窗口。参数：无。返回：无。
     ~FeatureMenu();
     // 作用：创建并注册一个功能按钮。
-    // 参数：title 为显示名称；action 为点击后执行的回调。
+    // 参数：title 为显示名称；icon_filename 为 src/icon 中的 PNG 文件名；
+    //       action 为点击后执行的回调。
     // 返回：按钮窗口创建成功为 true，否则为 false。
-    bool Add(std::wstring title, std::function<void()> action);
+    bool Add(std::wstring title, const wchar_t* icon_filename, std::function<void()> action);
     // 作用：按悬浮球位置在屏幕内侧排列并显示功能按钮。
     // 参数：orb 为悬浮球屏幕矩形；monitor 为所在显示器；dpi 为目标缩放值。返回：无。
     void ShowAround(RECT orb, const platform::Monitor& monitor, UINT dpi);

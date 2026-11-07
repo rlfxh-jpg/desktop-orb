@@ -3,6 +3,7 @@
 #include "desktop_orb/ui/feature_menu.hpp"
 
 #include "desktop_orb/ui/drawing.hpp"
+#include "desktop_orb/ui/icon_image.hpp"
 #include <algorithm>
 
 namespace desktop_orb::ui {
@@ -10,9 +11,10 @@ namespace desktop_orb::ui {
 class FeatureMenu::Button final : public WindowBase {
 public:
     // 作用：保存按钮标题和点击动作。
-    // 参数：title 为按钮文字；action 为点击回调。返回：无。
-    Button(std::wstring title, std::function<void()> action)
-        : title_(std::move(title)), action_(std::move(action)) {}
+    // 参数：title 为按钮文字；icon_filename 为 PNG 文件名；action 为点击回调。
+    // 返回：无；图标加载失败时绘制会退回到简易窗口符号。
+    Button(std::wstring title, const wchar_t* icon_filename, std::function<void()> action)
+        : title_(std::move(title)), icon_(icon_filename), action_(std::move(action)) {}
 
     // 作用：创建初始隐藏的圆形功能按钮窗口。
     // 参数：无。返回：创建成功为 true，Win32 创建失败为 false。
@@ -43,16 +45,23 @@ protected:
             GetClientRect(handle(), &bounds);
             const int size = bounds.right;
             Fill(dc, bounds, Color(36, 52, 57));
-            HBRUSH transparent = static_cast<HBRUSH>(GetStockObject(NULL_BRUSH));
-            HGDIOBJ old_brush = SelectObject(dc, transparent);
-            HPEN pen = CreatePen(PS_SOLID, std::max(1, size / 41), Color(84, 211, 184));
-            HGDIOBJ old_pen = SelectObject(dc, pen);
-            Rectangle(dc, size * 34 / 100, size * 22 / 100, size * 66 / 100, size * 47 / 100);
-            SelectObject(dc, old_brush);
-            SelectObject(dc, old_pen);
-            DeleteObject(pen);
-            Line(dc, {size / 2, size * 47 / 100}, {size / 2, size * 55 / 100}, Color(84, 211, 184), 2);
-            Line(dc, {size * 39 / 100, size * 55 / 100}, {size * 61 / 100, size * 55 / 100}, Color(84, 211, 184), 2);
+            const int icon_size = size * 62 / 100;
+            const int icon_x = (size - icon_size) / 2;
+            const RECT icon_bounds{icon_x, size / 100, icon_x + icon_size,
+                                   size / 100 + icon_size};
+            // 核心逻辑：外部图片缺失或绘制失败时保留可识别的功能符号。
+            if (!icon_.Draw(dc, icon_bounds)) {
+                HBRUSH transparent = static_cast<HBRUSH>(GetStockObject(NULL_BRUSH));
+                HGDIOBJ old_brush = SelectObject(dc, transparent);
+                HPEN pen = CreatePen(PS_SOLID, std::max(1, size / 41), Color(84, 211, 184));
+                HGDIOBJ old_pen = SelectObject(dc, pen);
+                Rectangle(dc, size * 34 / 100, size * 22 / 100, size * 66 / 100, size * 47 / 100);
+                SelectObject(dc, old_brush);
+                SelectObject(dc, old_pen);
+                DeleteObject(pen);
+                Line(dc, {size / 2, size * 47 / 100}, {size / 2, size * 55 / 100}, Color(84, 211, 184), 2);
+                Line(dc, {size * 39 / 100, size * 55 / 100}, {size * 61 / 100, size * 55 / 100}, Color(84, 211, 184), 2);
+            }
             Text(dc, title_, {3, size * 58 / 100, size - 3, size * 85 / 100},
                  std::max(11, size * 12 / 82), Color(244, 251, 249), FW_SEMIBOLD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             EndPaint(handle(), &paint);
@@ -67,14 +76,15 @@ protected:
 
 private:
     std::wstring title_;
+    IconImage icon_;
     std::function<void()> action_;
 };
 
 FeatureMenu::FeatureMenu() = default;
 FeatureMenu::~FeatureMenu() = default;
 
-bool FeatureMenu::Add(std::wstring title, std::function<void()> action) {
-    auto button = std::make_unique<Button>(std::move(title), std::move(action));
+bool FeatureMenu::Add(std::wstring title, const wchar_t* icon_filename, std::function<void()> action) {
+    auto button = std::make_unique<Button>(std::move(title), icon_filename, std::move(action));
     if (!button->Create()) return false;
     buttons_.push_back(std::move(button));
     return true;

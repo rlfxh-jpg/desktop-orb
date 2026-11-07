@@ -47,7 +47,7 @@ bool App::Initialize() {
         primary.work.right - 58, primary.work.top + (primary.work.bottom - primary.work.top) / 3});
     if (!orb_.Create(initial) || !panel_.Create()) return false;
     orb_.SnapToEdge();
-    if (!menu_.Add(L"窗口切换", [this] { OpenSwitcher(); })) return false;
+    if (!menu_.Add(L"窗口切换", L"window_switcher.png", [this] { OpenSwitcher(); })) return false;
     auto excluded = menu_.Handles();
     excluded.push_back(orb_.handle());
     excluded.push_back(panel_.handle());
