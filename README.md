@@ -17,7 +17,7 @@ Only one instance runs across Windows login sessions. Launching the executable a
 
 ## Controls
 
-- Click the ball to show its feature menu; drag it to another edge or monitor.
+- Click the ball to show its feature menu; drag it to another edge or monitor. Feature icons form a compact arc that expands as more features are added.
 - Click the window switcher icon to open the live window list on the same edge as the ball. Its small transparent button grows while hovered; after 3 seconds, its name appears. The ball hides while the list is open and returns when it closes.
 - Scroll the list, then click a window to activate it. `Esc` closes the menu or list.
 - The default global shortcut is `Ctrl+Alt+Space`.

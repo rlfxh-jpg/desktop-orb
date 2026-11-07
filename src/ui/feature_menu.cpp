@@ -3,6 +3,7 @@
 #include "desktop_orb/ui/feature_menu.hpp"
 
 #include "desktop_orb/ui/drawing.hpp"
+#include "desktop_orb/ui/feature_layout.hpp"
 #include "desktop_orb/ui/icon_image.hpp"
 #include <algorithm>
 #include <commctrl.h>
@@ -10,8 +11,6 @@
 namespace desktop_orb::ui {
 
 constexpr WORD kTooltipDelayMs = 3000;
-constexpr int kDefaultLogicalSize = 44;
-constexpr int kHoveredLogicalSize = 64;
 
 class FeatureMenu::Button final : public WindowBase {
 public:
@@ -35,11 +34,11 @@ public:
             (icon_.ready() ? WS_EX_LAYERED : 0);
         if (!CreateNative(L"DesktopOrbFeature", title_.c_str(), WS_POPUP,
                           ex_style,
-                          0, 0, kDefaultLogicalSize, kDefaultLogicalSize)) return false;
+                          0, 0, kDefaultFeatureDiameter, kDefaultFeatureDiameter)) return false;
         if (icon_.ready()) {
             if (!icon_.RenderLayered(handle(), 255)) return false;
         } else {
-            SetWindowRgn(handle(), CreateEllipticRgn(0, 0, kDefaultLogicalSize, kDefaultLogicalSize), TRUE);
+            SetWindowRgn(handle(), CreateEllipticRgn(0, 0, kDefaultFeatureDiameter, kDefaultFeatureDiameter), TRUE);
         }
 
         INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_WIN95_CLASSES};
@@ -174,8 +173,8 @@ private:
     HWND tooltip_ = nullptr;
     int center_x_ = 0;
     int center_y_ = 0;
-    int default_size_ = kDefaultLogicalSize;
-    int hovered_size_ = kHoveredLogicalSize;
+    int default_size_ = kDefaultFeatureDiameter;
+    int hovered_size_ = kHoveredFeatureDiameter;
     bool tracking_mouse_ = false;
     bool expanded_ = false;
 };
@@ -191,19 +190,11 @@ bool FeatureMenu::Add(std::wstring title, const wchar_t* icon_filename, std::fun
 }
 
 void FeatureMenu::ShowAround(RECT orb, const platform::Monitor& monitor, UINT dpi) {
-    const int size = platform::Scale(kHoveredLogicalSize, dpi);
-    const int default_size = platform::Scale(kDefaultLogicalSize, dpi);
-    const int gap = platform::Scale(24, dpi);
-    const int center_x = (orb.left + orb.right) / 2;
-    const int center_y = (orb.top + orb.bottom) / 2;
-    const int direction = center_x < (monitor.work.left + monitor.work.right) / 2 ? 1 : -1;
+    const FeatureLayout layout = ArrangeFeatures(orb, monitor.work, dpi, buttons_.size());
+    if (layout.centers.empty() || layout.centers.size() != buttons_.size()) return;
     for (size_t index = 0; index < buttons_.size(); ++index) {
-        const int offset = (static_cast<int>(index) * 2 - static_cast<int>(buttons_.size()) + 1) * (size + gap / 2) / 2;
-        const int x = std::clamp(center_x + direction * (static_cast<int>(orb.right - orb.left) / 2 + gap + size / 2) - size / 2,
-                                 static_cast<int>(monitor.work.left), static_cast<int>(monitor.work.right - size));
-        const int y = std::clamp(center_y + offset - size / 2, static_cast<int>(monitor.work.top),
-                                 static_cast<int>(monitor.work.bottom - size));
-        buttons_[index]->Position(x + size / 2, y + size / 2, default_size, size);
+        buttons_[index]->Position(layout.centers[index].x, layout.centers[index].y,
+                                  layout.default_diameter, layout.hovered_diameter);
         buttons_[index]->EnableTooltip();
         ShowWindow(buttons_[index]->handle(), SW_SHOWNOACTIVATE);
     }

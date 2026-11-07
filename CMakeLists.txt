@@ -17,6 +17,7 @@ add_executable(desktop-orb WIN32
     src/ui/icon_image.cpp
     src/ui/orb_artwork.cpp
     src/ui/orb_window.cpp
+    src/ui/feature_layout.cpp
     src/ui/feature_menu.cpp
     src/ui/switcher_panel.cpp
 )
@@ -37,4 +38,21 @@ add_custom_target(copy_icons ALL
 
 if(MSVC)
     target_compile_options(desktop-orb PRIVATE /W4 /permissive- /utf-8)
+endif()
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(feature-layout-test
+        tests/feature_layout_test.cpp
+        src/ui/feature_layout.cpp
+        src/platform/monitor.cpp
+    )
+    target_include_directories(feature-layout-test PRIVATE include)
+    target_compile_features(feature-layout-test PRIVATE cxx_std_20)
+    target_compile_definitions(feature-layout-test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(feature-layout-test PRIVATE user32)
+    if(MSVC)
+        target_compile_options(feature-layout-test PRIVATE /W4 /permissive- /utf-8)
+    endif()
+    add_test(NAME feature-layout COMMAND feature-layout-test)
 endif()
