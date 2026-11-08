@@ -300,10 +300,14 @@ void App::StartScreenshotAnalysis(RECT selection, platform::ScreenshotAiTask tas
     screenshot_ai_pending_ = true;
     screenshot_window_.SetAnalysisPending(true);
     try {
-        // 核心逻辑：网络请求和 Python 解释器都在后台执行，避免阻塞全屏选区窗口的消息循环。
+        // 核心逻辑：网络请求在后台执行；配置按值复制，避免后台线程读取 UI 线程正在更新的设置。
+        const platform::ScreenshotAiConfig config{
+            settings_.screenshot_ai_api_key,
+            settings_.screenshot_ai_base_url,
+            settings_.screenshot_ai_model};
         screenshot_ai_future_ = std::async(std::launch::async,
-            [image = std::move(image_png), task] {
-                return platform::AnalyzeScreenshot(image, task);
+            [image = std::move(image_png), task, config] {
+                return platform::AnalyzeScreenshot(image, task, config);
             });
     } catch (const std::exception&) {
         screenshot_ai_pending_ = false;
@@ -352,6 +356,9 @@ void App::CloseOverlays() {
 
 void App::ReloadSettings() {
     const auto next = settings_store_.Load();
+    settings_.screenshot_ai_api_key = next.screenshot_ai_api_key;
+    settings_.screenshot_ai_base_url = next.screenshot_ai_base_url;
+    settings_.screenshot_ai_model = next.screenshot_ai_model;
     const auto hotkey = platform::SettingsStore::ParseHotkey(next.hotkey);
     if (!hotkey) {
         Warn(orb_.handle(), L"快捷键无效", L"请使用 Ctrl、Alt、Shift 或 Win，加上字母、数字、Space 或 F1-F12。");

@@ -17,6 +17,9 @@ struct Hotkey {
 struct Settings {
     std::optional<POINT> orb_position;
     std::wstring hotkey = L"Ctrl+Alt+Space";
+    std::wstring screenshot_ai_api_key;
+    std::wstring screenshot_ai_base_url = L"https://api.openai.com/v1";
+    std::wstring screenshot_ai_model = L"gpt-4o-mini";
 };
 
 class SettingsStore {

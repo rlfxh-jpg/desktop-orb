@@ -14,8 +14,9 @@ namespace {
 // 返回：读取到的宽字符串，最多保留缓冲区可容纳的内容。
 std::wstring ReadValue(const std::filesystem::path& path, const wchar_t* section,
                        const wchar_t* key, const wchar_t* fallback) {
-    wchar_t buffer[256]{};
-    GetPrivateProfileStringW(section, key, fallback, buffer, 256, path.c_str());
+    wchar_t buffer[8192]{};
+    GetPrivateProfileStringW(section, key, fallback, buffer,
+                             static_cast<DWORD>(std::size(buffer)), path.c_str());
     return buffer;
 }
 
@@ -43,6 +44,10 @@ SettingsStore::SettingsStore() {
 Settings SettingsStore::Load() const {
     Settings settings;
     settings.hotkey = ReadValue(path_, L"Controls", L"Hotkey", L"Ctrl+Alt+Space");
+    settings.screenshot_ai_api_key = ReadValue(path_, L"ScreenshotAI", L"ApiKey", L"");
+    settings.screenshot_ai_base_url = ReadValue(
+        path_, L"ScreenshotAI", L"BaseUrl", L"https://api.openai.com/v1");
+    settings.screenshot_ai_model = ReadValue(path_, L"ScreenshotAI", L"Model", L"gpt-4o-mini");
     const auto x = ReadValue(path_, L"Orb", L"X", L"");
     const auto y = ReadValue(path_, L"Orb", L"Y", L"");
     if (!x.empty() && !y.empty()) {
@@ -57,6 +62,12 @@ bool SettingsStore::Save(const Settings& settings) const {
     std::filesystem::create_directories(path_.parent_path(), error);
     if (error) return false;
     if (!WritePrivateProfileStringW(L"Controls", L"Hotkey", settings.hotkey.c_str(), path_.c_str())) return false;
+    if (!WritePrivateProfileStringW(L"ScreenshotAI", L"ApiKey",
+                                    settings.screenshot_ai_api_key.c_str(), path_.c_str())) return false;
+    if (!WritePrivateProfileStringW(L"ScreenshotAI", L"BaseUrl",
+                                    settings.screenshot_ai_base_url.c_str(), path_.c_str())) return false;
+    if (!WritePrivateProfileStringW(L"ScreenshotAI", L"Model",
+                                    settings.screenshot_ai_model.c_str(), path_.c_str())) return false;
     if (settings.orb_position) {
         const auto x = std::to_wstring(settings.orb_position->x);
         const auto y = std::to_wstring(settings.orb_position->y);

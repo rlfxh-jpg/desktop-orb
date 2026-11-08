@@ -4,28 +4,23 @@ Windows desktop floating hub written in C++20. The first feature is a live, scro
 
 ## Build
 
-Requires Visual Studio 2022 or newer with Desktop development with C++ and CMake, plus Python 3.10+ development files.
+Requires Visual Studio 2022 or newer with Desktop development with C++ and CMake. Screenshot analysis uses Windows WinHTTP and CryptoAPI; it has no Python or third-party HTTP library dependency.
 
 ```powershell
-python -m pip install pybind11
-python -m pip install Cython
-python -m pip install -r assets/python/requirements.txt
 cmake -S . -B build -A x64
 cmake --build build --config Release
 ```
 
-The build compiles `assets/python/llm_worker.py` with Cython into a Python extension DLL (`llm_worker*.pyd`) and copies it to `build\Release\assets\python\`. The executable imports this compiled module through its embedded Python interpreter. The matching Python runtime and the packages in `assets/python/requirements.txt` are still required; the `.pyd` is an extension module, not a standalone replacement for the Python runtime.
+Screenshot text extraction and summarization call an OpenAI-compatible vision model directly from C++. Set `[ScreenshotAI]` values in `%APPDATA%\DesktopOrb\settings.ini`; right-click the floating ball and choose **打开设置文件** to edit it:
 
-Screenshot text extraction and summarization call an OpenAI-compatible vision model. Configure these variables in the environment used to launch the application:
-
-```powershell
-$env:OPENAI_API_KEY = "your-api-key"
-$env:OPENAI_MODEL = "gpt-4o-mini"
-# Optional for a compatible provider:
-$env:OPENAI_BASE_URL = "https://your-provider.example/v1"
+```ini
+[ScreenshotAI]
+ApiKey=your-api-key
+BaseUrl=https://api.openai.com/v1
+Model=gpt-4o-mini
 ```
 
-If Python is installed outside `PATH`, add the matching Python runtime directory to `PATH` before launching the executable so `python3xx.dll` can be loaded. Install the OpenAI Python SDK into the same Python environment used by CMake.
+`ApiKey` is stored as plain text in the current user's settings file. `BaseUrl` is the service root; the client appends `/chat/completions` automatically. Remote services must use HTTPS; HTTP is accepted for loopback development servers. The client uses Windows certificate validation and the system proxy settings.
 
 Run `build\Release\desktop-orb.exe`. A floating ball appears at the edge of the primary display.
 The build copies `assets/icons/*.png` to `build\Release\assets\icons\`. Keep the `assets` directory beside the exe when distributing or moving it.
@@ -47,7 +42,7 @@ Settings are stored at `%APPDATA%\DesktopOrb\settings.ini`. Change `Hotkey` to a
 - `app`: composes shared UI and feature modules.
 - `platform/common`: shared monitor, settings, asset path and single-instance support.
 - `platform/window_switcher`: window discovery, activation and DWM thumbnails.
-- `platform/screenshot`: virtual desktop capture, PNG output, clipboard integration and the embedded Python vision client.
+- `platform/screenshot`: virtual desktop capture, PNG output, clipboard integration and the native C++ WinHTTP vision client.
 - `ui/screenshot`: full virtual desktop selection overlay, size feedback and post-capture actions.
 - `ui/common`: floating orb, shared window lifecycle, drawing, icon loading and feature menu.
 - `ui/window_switcher`: the window switcher panel and its interactions.
