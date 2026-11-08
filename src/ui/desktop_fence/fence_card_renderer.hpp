@@ -23,7 +23,7 @@ namespace desktop_orb::ui {
 void DrawFenceBackdrop(HDC dc, HWND window, RECT client, UINT dpi, RECT monitor_bounds,
                        Gdiplus::Bitmap* wallpaper);
 
-// 作用：绘制围栏分类标题、居中图标网格、项目状态和覆盖式滚动条。
+// 作用：绘制围栏分类标题、均分列宽且左对齐的图标网格、项目状态和覆盖式滚动条。
 // 参数：dc 为目标设备上下文；client 为客户区；dpi 为卡片显示器 DPI；category 为分类；
 //       category_icon 为借用标题图标；items 与 icons 为同序项目数据和本卡片拥有的图标；
 //       selected、hovered 为选中和悬停索引；scroll_row 为首个可见行。

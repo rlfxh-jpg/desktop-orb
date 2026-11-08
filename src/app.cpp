@@ -260,7 +260,8 @@ void App::OpenDesktopFence() {
 void App::CaptureScreenshot() {
     menu_.Hide();
     panel_.Hide();
-    fence_panel_.Hide();
+    // 核心逻辑：围栏是持续显示的桌面功能，截图不改变其开关状态；
+    // 用户若在桌面上截取围栏，快照也应保留当前可见内容。
     ShowWindow(orb_.handle(), SW_HIDE);
     // 核心逻辑：等待 DWM 完成悬浮球隐藏，避免将自身界面残影写入截图。
     Sleep(100);

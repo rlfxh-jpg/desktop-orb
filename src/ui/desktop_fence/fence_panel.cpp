@@ -10,8 +10,8 @@
 namespace desktop_orb::ui {
 namespace {
 
-constexpr int kCardWidth = 520;
-constexpr int kCardHeight = 400;
+constexpr int kCardWidth = 600;
+constexpr int kCardHeight = 450;
 constexpr int kCardGap = 16;
 constexpr platform::DesktopFenceCategory kCategories[] = {
     platform::DesktopFenceCategory::programs,

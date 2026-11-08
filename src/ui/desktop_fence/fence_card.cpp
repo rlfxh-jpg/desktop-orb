@@ -7,6 +7,7 @@
 #include "desktop_orb/platform/desktop_fence/desktop_window_layer.hpp"
 #include "desktop_orb/ui/common/window_base.hpp"
 #include "fence_card_renderer.hpp"
+#include "fence_grid_layout.hpp"
 #include <algorithm>
 #include <commctrl.h>
 #include <cstdlib>
@@ -19,11 +20,10 @@ namespace {
 
 constexpr UINT_PTR kRefreshTimerId = 3;
 constexpr UINT kRefreshIntervalMs = 2500;
-constexpr int kCardWidth = 520;
-constexpr int kCardHeight = 400;
+constexpr int kCardWidth = 600;
+constexpr int kCardHeight = 450;
 constexpr int kCardHeaderHeight = 56;
 constexpr int kCardPadding = 8;
-constexpr int kGridCellWidth = 68;
 constexpr int kGridCellHeight = 88;
 
 }  // 匿名命名空间结束
@@ -215,11 +215,8 @@ private:
     int ColumnCount() const {
         RECT client{};
         GetClientRect(handle(), &client);
-        const UINT dpi = GetDpiForWindow(handle());
-        const int cell_width = platform::Scale(kGridCellWidth, dpi);
-        const int available = std::max(cell_width,
-            static_cast<int>(client.right) - platform::Scale(kCardPadding * 2 + 12, dpi));
-        return std::max(1, available / cell_width);
+        return MakeFenceGridLayout(client.right - client.left,
+            GetDpiForWindow(handle())).columns;
     }
 
     // 作用：计算内容区域可见的整行图标数和总行数。
@@ -244,20 +241,19 @@ private:
         RECT client{};
         GetClientRect(handle(), &client);
         const UINT dpi = GetDpiForWindow(handle());
-        const int padding = platform::Scale(kCardPadding, dpi);
         const int content_top = platform::Scale(kCardHeaderHeight + 10, dpi);
-        const int cell_width = platform::Scale(kGridCellWidth, dpi);
+        const FenceGridLayout grid = MakeFenceGridLayout(client.right - client.left, dpi);
         const int cell_height = platform::Scale(kGridCellHeight, dpi);
-        if (point.x < padding || point.x >= client.right - padding || point.y < content_top)
+        if (point.y < content_top)
             return std::nullopt;
         const size_t row = static_cast<size_t>((point.y - content_top) / cell_height) +
                            static_cast<size_t>(scroll_row_);
         const size_t row_start = row * static_cast<size_t>(ColumnCount());
         if (row_start >= items_.size()) return std::nullopt;
         const size_t row_count = std::min(static_cast<size_t>(ColumnCount()), items_.size() - row_start);
-        const int row_left = padding;
-        if (point.x < row_left) return std::nullopt;
-        const size_t column = static_cast<size_t>((point.x - row_left) / cell_width);
+        const int hit_column = grid.ColumnAt(point.x);
+        if (hit_column < 0) return std::nullopt;
+        const size_t column = static_cast<size_t>(hit_column);
         if (column >= row_count) return std::nullopt;
         const size_t index = row_start + column;
         return index < items_.size() ? std::optional<size_t>(index) : std::nullopt;
@@ -272,7 +268,7 @@ private:
         RECT client{};
         GetClientRect(handle(), &client);
         const UINT dpi = GetDpiForWindow(handle());
-        const int track_x = client.right - platform::Scale(kCardPadding, dpi);
+        const int track_x = client.right - platform::Scale(6, dpi);
         const int track_top = platform::Scale(kCardHeaderHeight + 10, dpi);
         const int track_bottom = client.bottom - platform::Scale(kCardPadding, dpi);
         return point.x >= track_x - platform::Scale(8, dpi) && point.x <= track_x +
