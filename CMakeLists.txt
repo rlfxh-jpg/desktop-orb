@@ -23,6 +23,7 @@ add_executable(desktop-orb WIN32
     src/ui/common/feature_menu.cpp
     src/ui/window_switcher/switcher_panel.cpp
     src/ui/screenshot/selection_window.cpp
+    src/ui/screenshot/result_panel_window.cpp
 )
 
 target_include_directories(desktop-orb PRIVATE include)

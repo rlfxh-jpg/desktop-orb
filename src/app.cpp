@@ -241,6 +241,10 @@ void App::CaptureScreenshot() {
 
 void App::HandleScreenshotAction(ui::ScreenshotAction action, RECT selection) {
     switch (action) {
+        case ui::ScreenshotAction::copy_analysis_result:
+            if (!CopyTextToClipboard(screenshot_window_.handle(), screenshot_window_.analysis_result()))
+                Warn(screenshot_window_.handle(), L"复制失败", L"无法将分析结果写入 Windows 剪贴板。");
+            return;
         case ui::ScreenshotAction::extract_text:
             StartScreenshotAnalysis(selection, platform::ScreenshotAiTask::extract_text);
             return;
@@ -332,20 +336,16 @@ void App::PollScreenshotAnalysis() {
 
     const HWND owner = screenshot_window_.visible() ? screenshot_window_.handle() : orb_.handle();
     if (!result.succeeded) {
-        Warn(owner, L"截图分析失败", result.error.c_str());
+        if (screenshot_window_.visible()) {
+            screenshot_window_.SetAnalysisResult(L"分析失败", std::move(result.error));
+        } else {
+            Warn(owner, L"截图分析失败", result.error.c_str());
+        }
         return;
     }
-    if (!CopyTextToClipboard(owner, result.text)) {
-        Warn(owner, L"复制分析结果失败", L"无法将完整分析结果写入 Windows 剪贴板。");
-        return;
-    }
-
     const wchar_t* title = screenshot_ai_task_ == platform::ScreenshotAiTask::extract_text
         ? L"截图文字提取结果" : L"截图内容总结";
-    std::wstring message = result.text.substr(0, 1400);
-    if (result.text.size() > 1400) message += L"\n\n（内容较长，完整结果已复制到剪贴板。）";
-    else message += L"\n\n完整结果已复制到剪贴板。";
-    MessageBoxW(owner, message.c_str(), title, MB_OK | MB_ICONINFORMATION);
+    screenshot_window_.SetAnalysisResult(title, std::move(result.text));
 }
 
 void App::CloseOverlays() {

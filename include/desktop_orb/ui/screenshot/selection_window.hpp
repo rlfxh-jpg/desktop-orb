@@ -4,13 +4,15 @@
 // 窗口只借用平台层快照位图；截图像素的采集、裁剪、保存由 platform/screenshot 负责。
 #include "desktop_orb/platform/screenshot/screenshot_service.hpp"
 #include "desktop_orb/ui/common/window_base.hpp"
+#include "desktop_orb/ui/screenshot/result_panel_window.hpp"
 #include <functional>
+#include <string>
 
 namespace desktop_orb::ui {
 
 // 作用：表示选区完成后用户请求的操作。
 // 参数：无。返回：无。
-enum class ScreenshotAction { extract_text, summarize, copy, save, recapture, close };
+enum class ScreenshotAction { extract_text, summarize, copy, save, recapture, close, copy_analysis_result };
 
 // 作用：覆盖所有显示器显示冻结画面、暗色遮罩和可拖动截图选区。
 // 参数：无。返回：无；快照由调用方持有，窗口关闭前调用方需保证其有效。
@@ -31,6 +33,12 @@ public:
     // 作用：更新大模型分析进行中的显示状态。
     // 参数：pending 为 true 时禁用两个分析按钮并显示等待状态。返回：无。
     void SetAnalysisPending(bool pending);
+    // 作用：在截图操作栏下方显示可选择和滚动的大模型分析结果。
+    // 参数：title 为结果标题；text 为可复制的完整结果。返回：无。
+    void SetAnalysisResult(std::wstring title, std::wstring text);
+    // 作用：取得当前展示的大模型分析结果，供用户点击复制按钮时读取。
+    // 参数：无。返回：完整结果文本；尚无结果时为空字符串。
+    [[nodiscard]] const std::wstring& analysis_result() const { return result_panel_.content(); }
     // 作用：通知应用层执行截图操作。参数：action 为请求操作；selection 为屏幕坐标选区。
     // 返回：无；空回调时不执行操作。
     std::function<void(ScreenshotAction, RECT)> on_action;
@@ -80,6 +88,12 @@ private:
     void DrawFrame(HDC dc);
     // 作用：根据选区尺寸计算工具栏屏幕矩形。参数：无。返回：屏幕坐标矩形。
     [[nodiscard]] RECT ToolbarBounds() const;
+    // 作用：计算工具栏下方结果面板的屏幕矩形，并在桌面边界内调整位置。
+    // 参数：无。返回：屏幕坐标矩形；当前无选区或结果面板隐藏时返回空矩形。
+    [[nodiscard]] RECT ResultsBounds() const;
+    // 作用：根据选区位置显示或隐藏独立的大模型结果窗口。
+    // 参数：无。返回：无；窗口显示位置会限制在当前虚拟桌面边界内。
+    void LayoutResultPanel();
     // 作用：在指定操作栏局部点命中操作按钮。参数：point 为客户区坐标。
     // 返回：命中操作；未命中时为 close（调用方会单独验证操作栏范围）。
     [[nodiscard]] ScreenshotAction HitAction(POINT point) const;
@@ -101,7 +115,9 @@ private:
     bool toolbar_pressed_ = false;
     bool selected_ = false;
     bool analysis_pending_ = false;
+    bool analysis_result_visible_ = false;
     bool visible_ = false;
+    ResultPanelWindow result_panel_;
 };
 
 }  // desktop_orb::ui 命名空间结束

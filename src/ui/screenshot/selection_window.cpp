@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <string>
+#include <utility>
 #include <windowsx.h>
 
 namespace desktop_orb::ui {
@@ -19,6 +20,8 @@ constexpr int kToolbarPadding = 6;
 constexpr int kToolbarButtonCount = 6;
 constexpr int kToolbarWidth = kToolbarPadding * 2 + kToolbarButtonWidth * kToolbarButtonCount +
                               kToolbarGap * (kToolbarButtonCount - 1);
+constexpr int kResultsWidth = 520;
+constexpr int kResultsHeight = 260;
 constexpr int kSelectionBorderWidth = 3;
 constexpr int kResizeHitTolerance = 8;
 constexpr COLORREF kSelectionBorderColor = RGB(24, 132, 255);
@@ -51,8 +54,16 @@ void DrawSelectionBorder(HDC dc, RECT bounds) {
 }  // 匿名命名空间结束
 
 bool SelectionWindow::Create() {
-    return CreateNative(L"DesktopOrbScreenshotSelection", L"截图选区",
-        WS_POPUP, WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED, 0, 0, 1, 1);
+    if (!CreateNative(L"DesktopOrbScreenshotSelection", L"截图选区",
+            WS_POPUP, WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED, 0, 0, 1, 1)) {
+        return false;
+    }
+    if (!result_panel_.Create(handle())) {
+        DestroyWindow(handle());
+        return false;
+    }
+    result_panel_.on_copy = [this] { Dispatch(ScreenshotAction::copy_analysis_result); };
+    return true;
 }
 
 SelectionWindow::~SelectionWindow() {
@@ -75,6 +86,9 @@ bool SelectionWindow::ShowFor(platform::ScreenshotService& snapshot) {
     toolbar_pressed_ = false;
     selected_ = false;
     analysis_pending_ = false;
+    analysis_result_visible_ = false;
+    result_panel_.SetContent(L"", L"");
+    result_panel_.Hide();
     visible_ = true;
     SetCursor(LoadCursorW(nullptr, IDC_ARROW));
     // 核心逻辑：先在隐藏状态完成首帧合成并提交分层表面，避免系统先展示未绘制的全屏窗口。
@@ -153,12 +167,27 @@ void SelectionWindow::Hide() {
     toolbar_pressed_ = false;
     selected_ = false;
     analysis_pending_ = false;
+    analysis_result_visible_ = false;
+    result_panel_.Hide();
     snapshot_ = nullptr;
     ShowWindow(handle(), SW_HIDE);
 }
 
 void SelectionWindow::SetAnalysisPending(bool pending) {
     analysis_pending_ = pending;
+    if (pending) {
+        analysis_result_visible_ = true;
+        result_panel_.SetContent(L"分析中", L"正在分析截图，请稍候……");
+    }
+    LayoutResultPanel();
+    InvalidateRect(handle(), nullptr, FALSE);
+}
+
+void SelectionWindow::SetAnalysisResult(std::wstring title, std::wstring text) {
+    analysis_pending_ = false;
+    analysis_result_visible_ = true;
+    result_panel_.SetContent(std::move(title), std::move(text));
+    LayoutResultPanel();
     InvalidateRect(handle(), nullptr, FALSE);
 }
 
@@ -288,6 +317,7 @@ void SelectionWindow::UpdateDrag(POINT client_point) {
                                                  desktop.bottom);
         }
     }
+    LayoutResultPanel();
 }
 
 RECT SelectionWindow::ToolbarBounds() const {
@@ -306,6 +336,37 @@ RECT SelectionWindow::ToolbarBounds() const {
     const int maximum_top = std::max(minimum_top, static_cast<int>(desktop.bottom) - height);
     top = std::clamp(top, minimum_top, maximum_top);
     return {left, top, left + width, top + height};
+}
+
+RECT SelectionWindow::ResultsBounds() const {
+    if (!snapshot_ || !selected_ || !analysis_result_visible_) return {};
+    const RECT desktop = snapshot_->bounds();
+    const UINT dpi = GetDpiForWindow(handle());
+    const int desktop_width = static_cast<int>(desktop.right - desktop.left);
+    const int desktop_height = static_cast<int>(desktop.bottom - desktop.top);
+    const int width = std::min(platform::Scale(kResultsWidth, dpi), desktop_width);
+    const int height = std::min(platform::Scale(kResultsHeight, dpi), desktop_height);
+    const int gap = platform::Scale(6, dpi);
+    const RECT toolbar = ToolbarBounds();
+    const int left = std::clamp(static_cast<int>(toolbar.left), static_cast<int>(desktop.left),
+                                static_cast<int>(desktop.right) - width);
+    int top = toolbar.bottom + gap;
+    if (top + height > desktop.bottom) top = toolbar.top - height - gap;
+    top = std::clamp(top, static_cast<int>(desktop.top), static_cast<int>(desktop.bottom) - height);
+    return {left, top, left + width, top + height};
+}
+
+void SelectionWindow::LayoutResultPanel() {
+    if (!snapshot_) {
+        result_panel_.Hide();
+        return;
+    }
+    const RECT panel = ResultsBounds();
+    if (!analysis_result_visible_ || panel.right <= panel.left || panel.bottom <= panel.top) {
+        result_panel_.Hide();
+        return;
+    }
+    result_panel_.ShowAt(panel);
 }
 
 ScreenshotAction SelectionWindow::HitAction(POINT point) const {
@@ -433,6 +494,7 @@ void SelectionWindow::DrawFrame(HDC dc) {
                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
     }
+
 }
 
 LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
@@ -473,6 +535,9 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 } else {
                     selected_ = false;
                     resize_edges_ = 0;
+                    analysis_result_visible_ = false;
+                    result_panel_.SetContent(L"", L"");
+                    result_panel_.Hide();
                     drag_mode_ = DragMode::create;
                     selection_ = {screen_point.x, screen_point.y, screen_point.x, screen_point.y};
                 }
@@ -533,6 +598,7 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 SetWindowPos(handle(), HWND_TOPMOST, bounds.left, bounds.top, bounds.right - bounds.left,
                              bounds.bottom - bounds.top, SWP_NOACTIVATE);
             }
+            LayoutResultPanel();
             InvalidateRect(handle(), nullptr, FALSE);
             return 0;
         default: return WindowBase::HandleMessage(message, wparam, lparam);

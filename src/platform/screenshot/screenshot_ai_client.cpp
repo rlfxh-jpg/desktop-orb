@@ -479,7 +479,7 @@ std::string BuildRequestBody(const std::wstring& model, ScreenshotAiTask task,
                              const std::string& encoded_image) {
     const char* instruction = task == ScreenshotAiTask::extract_text
         ? "请识别截图中清晰可见的全部文字，尽量保留原有段落、列表和换行。只输出识别结果；不确定的内容标注为 [无法辨认]，不要补写截图之外的信息。"
-        : "请用中文概括这张截图的主要内容。优先说明截图展示的对象、关键信息和可见状态，简洁分点回答；不确定的内容明确说明，不要推测截图之外的信息。";
+        : "请用中文总结这张截图，不要逐字抄录截图中的全部文字，也不要输出 OCR 转录。用一两句概括截图主题，再提炼最多三个关键信息；如果是软件界面，说明当前页面用途、状态或明显问题。只引用理解内容所必需的短语，不要复述整屏文案；看不清或无法判断的内容请说明，不要推测截图之外的信息。";
     const auto model_utf8 = WideToUtf8(model);
     if (model_utf8.empty()) return {};
     std::string body;

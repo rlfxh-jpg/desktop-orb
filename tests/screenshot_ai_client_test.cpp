@@ -67,10 +67,10 @@ std::size_t ContentLength(const std::string& headers) {
 
 // 作用：接收完整 HTTP 请求并返回指定状态码和 JSON 响应。
 // 参数：listener 为已监听的本机 TCP 套接字；valid_request 接收请求内容检查结果；
-// status 为模拟的 HTTP 状态码；response_body 为服务端返回的 UTF-8 JSON 正文。
+// status 为模拟状态码；response_body 为服务端 UTF-8 JSON 正文；expected_prompt 为请求提示词片段。
 // 返回：无；客户端套接字在函数结束前关闭，接受或收发失败时 valid_request 保持 false。
 void ServeOneRequest(SOCKET listener, bool& valid_request, unsigned status,
-                     const std::string& response_body) {
+                     const std::string& response_body, const std::string& expected_prompt) {
     SOCKET client = accept(listener, nullptr, nullptr);
     if (client == INVALID_SOCKET) return;
 
@@ -95,7 +95,8 @@ void ServeOneRequest(SOCKET listener, bool& valid_request, unsigned status,
         valid_request = headers.find("POST /v1/chat/completions HTTP/1.1") != std::string::npos &&
             headers.find("Authorization: Bearer test-api-key") != std::string::npos &&
             request.find("\"model\":\"test-model\"") != std::string::npos &&
-            request.find("data:image/png;base64,iVBORw==") != std::string::npos;
+            request.find("data:image/png;base64,iVBORw==") != std::string::npos &&
+            (expected_prompt.empty() || request.find(expected_prompt) != std::string::npos);
         const std::string response = "HTTP/1.1 " + std::to_string(status) + " Test\r\nContent-Type: application/json\r\n" +
             "Content-Length: " + std::to_string(response_body.size()) +
             "\r\nConnection: close\r\n\r\n" + response_body;
@@ -111,11 +112,14 @@ void ServeOneRequest(SOCKET listener, bool& valid_request, unsigned status,
     closesocket(client);
 }
 
-// 作用：通过本机 HTTP 服务验证请求发送、成功响应解析及限流错误提示。
-// 参数：status 为模拟状态码；response_body 为服务端 JSON；expected_text 为预期结果或错误片段。
+// 作用：通过本机 HTTP 服务验证任务提示词、成功响应解析及限流错误提示。
+// 参数：status 为模拟状态码；response_body 为服务端 JSON；expected_text 为预期结果或错误片段；
+// task 为待验证的分析任务；expected_prompt 为请求中应包含的任务提示词片段。
 // 返回：请求格式有效且客户端结果符合预期时为 true。
 bool VerifyLocalHttpRequest(unsigned status, const std::string& response_body,
-                            const std::wstring& expected_text) {
+                            const std::wstring& expected_text,
+                            desktop_orb::platform::ScreenshotAiTask task,
+                            const std::string& expected_prompt) {
     WSADATA winsock_data{};
     if (WSAStartup(MAKEWORD(2, 2), &winsock_data) != 0) return false;
 
@@ -140,19 +144,20 @@ bool VerifyLocalHttpRequest(unsigned status, const std::string& response_body,
     }
 
     bool valid_request = false;
-    std::thread server([listener, &valid_request, status, response_body] {
-        ServeOneRequest(listener, valid_request, status, response_body);
+    std::thread server([listener, &valid_request, status, response_body, expected_prompt] {
+        ServeOneRequest(listener, valid_request, status, response_body, expected_prompt);
     });
     const auto port = std::to_wstring(ntohs(address.sin_port));
     const desktop_orb::platform::ScreenshotAiConfig config{
         L"test-api-key", std::wstring(L"http://127.0.0.1:") + port + L"/v1", L"test-model"};
     const std::vector<std::uint8_t> image{0x89, 0x50, 0x4e, 0x47};
     const auto result = desktop_orb::platform::AnalyzeScreenshot(
-        image, desktop_orb::platform::ScreenshotAiTask::extract_text, config);
+        image, task, config);
     server.join();
     closesocket(listener);
     WSACleanup();
-    if (expected_text.empty()) return valid_request && result.succeeded && result.text == L"第一行\n第二行 中";
+    if (status >= 200 && status < 300)
+        return valid_request && result.succeeded && result.text == expected_text;
     return valid_request && !result.succeeded && result.error.find(expected_text) != std::wstring::npos;
 }
 
@@ -195,19 +200,27 @@ int main() {
     }
 
     if (!VerifyLocalHttpRequest(200,
-            R"({"choices":[{"message":{"content":"第一行\n第二行 \u4e2d"}}]})", {})) {
+            R"({"choices":[{"message":{"content":"第一行\n第二行 \u4e2d"}}]})", L"第一行\n第二行 中",
+            ScreenshotAiTask::extract_text, "请识别截图中清晰可见的全部文字")) {
         std::wcerr << L"本机 HTTP 请求或 JSON 响应解析测试失败。\n";
+        return 1;
+    }
+    if (!VerifyLocalHttpRequest(200,
+            R"({"choices":[{"message":{"content":"这是一个软件设置页面，显示网络请求超限。"}}]})",
+            L"这是一个软件设置页面，显示网络请求超限。",
+            ScreenshotAiTask::summarize, "不要逐字抄录截图中的全部文字")) {
+        std::wcerr << L"截图总结任务未发送禁止逐字转录的提示词。\n";
         return 1;
     }
     if (!VerifyLocalHttpRequest(429,
             R"({"error":{"message":"You exceeded your current quota","type":"insufficient_quota","code":"insufficient_quota"}})",
-            L"账户额度或计费余额不足")) {
+            L"账户额度或计费余额不足", ScreenshotAiTask::extract_text, {})) {
         std::wcerr << L"HTTP 429 额度错误未正确提示。\n";
         return 1;
     }
     if (!VerifyLocalHttpRequest(429,
             R"({"error":{"message":"Too many requests","type":"rate_limit_error","code":"rate_limit_exceeded"}})",
-            L"请求频率或并发数超出服务商限制")) {
+            L"请求频率或并发数超出服务商限制", ScreenshotAiTask::extract_text, {})) {
         std::wcerr << L"HTTP 429 频率限制未正确提示。\n";
         return 1;
     }
