@@ -38,6 +38,7 @@ Only one instance runs across Windows login sessions. Launching the executable a
 - Click the ball to show its feature menu; drag it to another edge or monitor. Feature icons form a compact arc that expands as more features are added.
 - Click the window switcher icon to open the live window list on the same edge as the ball. Its small transparent button grows while hovered; after 3 seconds, its name appears. The ball hides while the list is open and returns when it closes.
 - Click the screenshot icon, then drag across the frozen desktop to select an area. The live selection size is shown in pixels. Choose **提取文字**, **总结截图**, **复制**, **保存**, **重新截取**, or **关闭** from the toolbar. AI results appear below the toolbar in a selectable, scrollable panel; click **复制结果** or select text and press `Ctrl+C`. Saving opens a folder picker. `Esc` closes the selection, and `Enter` copies the selected screenshot.
+- Click **桌面围栏** to browse items from the user and public desktops. The panel separates programs, folders, documents and other files; double-click an item to open it. The list refreshes every 2.5 seconds and does not move or modify the original files.
 - Scroll the list, then click a window to activate it. `Esc` closes the menu or list.
 - The default global shortcut is `Ctrl+Alt+Space`.
 - Right-click the ball to open or reload the settings file, or exit.
@@ -49,10 +50,12 @@ Change `Hotkey` in the same `settings.ini` to a combination such as `Ctrl+Shift+
 - `app`: composes shared UI and feature modules.
 - `platform/common`: shared monitor, settings, asset path and single-instance support.
 - `platform/window_switcher`: window discovery, activation and DWM thumbnails.
+- `platform/desktop_fence`: desktop and public desktop item discovery, type classification and Shell open requests.
 - `platform/screenshot`: virtual desktop capture, PNG output, clipboard integration and the native C++ WinHTTP vision client.
 - `ui/screenshot`: full virtual desktop selection overlay, size feedback and post-capture actions.
 - `ui/common`: floating orb, shared window lifecycle, drawing, icon loading and feature menu.
 - `ui/window_switcher`: the window switcher panel and its interactions.
+- `ui/desktop_fence`: categorized, scrollable desktop item panel.
 - `assets/icons`: runtime PNG images. Add a lowercase, underscore-separated PNG here and build.
 
 ## Adding an icon

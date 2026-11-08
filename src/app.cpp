@@ -125,18 +125,24 @@ bool App::Initialize() {
     const auto primary = platform::MonitorAt({0, 0});
     const POINT initial = settings_.orb_position.value_or(POINT{
         primary.work.right - 58, primary.work.top + (primary.work.bottom - primary.work.top) / 3});
-    if (!orb_.Create(initial) || !panel_.Create() || !screenshot_window_.Create()) return false;
+    if (!orb_.Create(initial) || !panel_.Create() || !fence_panel_.Create() ||
+        !screenshot_window_.Create()) return false;
     orb_.SnapToEdge();
     if (!menu_.Add(L"窗口切换", L"window_switcher.png", [this] { OpenSwitcher(); })) return false;
     if (!menu_.Add(L"截图", L"screenshot.png", [this] { CaptureScreenshot(); })) return false;
+    if (!menu_.Add(L"桌面围栏", L"desktop_fence.png", [this] { OpenDesktopFence(); })) return false;
     auto excluded = menu_.Handles();
     excluded.push_back(orb_.handle());
     excluded.push_back(panel_.handle());
+    excluded.push_back(fence_panel_.handle());
     panel_.SetExcluded(std::move(excluded));
     screenshot_window_.on_action = [this](ui::ScreenshotAction action, RECT selection) {
         HandleScreenshotAction(action, selection);
     };
     panel_.on_closed = [this] {
+        ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
+    };
+    fence_panel_.on_closed = [this] {
         ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
     };
 
@@ -181,12 +187,15 @@ void App::Tick() {
     const RECT orb_bounds = orb_.Bounds();
     const RECT hover_bounds{orb_bounds.left - 28, orb_bounds.top - 28,
                             orb_bounds.right + 28, orb_bounds.bottom + 28};
-    orb_.SetAlpha(Contains(hover_bounds, cursor) || menu_.visible() || panel_.visible() ? 255 : 125);
+    orb_.SetAlpha(Contains(hover_bounds, cursor) || menu_.visible() || panel_.visible() ||
+                  fence_panel_.visible() ? 255 : 125);
 
     const bool left_down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-    if (left_down && !previous_left_down_ && (menu_.visible() || panel_.visible())) {
+    if (left_down && !previous_left_down_ &&
+        (menu_.visible() || panel_.visible() || fence_panel_.visible())) {
         bool inside = Contains(orb_bounds, cursor);
         if (panel_.visible()) inside = inside || Contains(Bounds(panel_.handle()), cursor);
+        if (fence_panel_.visible()) inside = inside || Contains(Bounds(fence_panel_.handle()), cursor);
         if (menu_.visible()) {
             for (HWND button : menu_.Handles()) inside = inside || Contains(Bounds(button), cursor);
         }
@@ -204,6 +213,7 @@ void App::ToggleMenu() {
     if (screenshot_window_.visible()) return;
     if (menu_.visible()) { menu_.Hide(); return; }
     panel_.Hide();
+    fence_panel_.Hide();
     const RECT bounds = orb_.Bounds();
     const POINT center{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
     menu_.ShowAround(bounds, platform::MonitorAt(center), GetDpiForWindow(orb_.handle()));
@@ -211,6 +221,7 @@ void App::ToggleMenu() {
 
 void App::OpenSwitcher() {
     menu_.Hide();
+    fence_panel_.Hide();
     const RECT bounds = orb_.Bounds();
     const POINT center{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
     const auto monitor = platform::MonitorAt(center);
@@ -220,9 +231,21 @@ void App::OpenSwitcher() {
     if (panel_.visible()) ShowWindow(orb_.handle(), SW_HIDE);
 }
 
+void App::OpenDesktopFence() {
+    menu_.Hide();
+    panel_.Hide();
+    const RECT bounds = orb_.Bounds();
+    const POINT center{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
+    const auto monitor = platform::MonitorAt(center);
+    const bool align_right = center.x >= (monitor.work.left + monitor.work.right) / 2;
+    fence_panel_.ShowFor(monitor, align_right);
+    if (fence_panel_.visible()) ShowWindow(orb_.handle(), SW_HIDE);
+}
+
 void App::CaptureScreenshot() {
     menu_.Hide();
     panel_.Hide();
+    fence_panel_.Hide();
     ShowWindow(orb_.handle(), SW_HIDE);
     // 核心逻辑：等待 DWM 完成悬浮球隐藏，避免将自身界面残影写入截图。
     Sleep(100);
@@ -351,6 +374,7 @@ void App::PollScreenshotAnalysis() {
 void App::CloseOverlays() {
     menu_.Hide();
     panel_.Hide();
+    fence_panel_.Hide();
 }
 
 void App::ReloadSettings() {
