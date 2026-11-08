@@ -3,7 +3,9 @@
 // 文件职责：声明虚拟桌面截图快照的采集、裁剪保存和剪贴板发布接口。
 // 模块由 platform/screenshot 实现；服务独占快照 HBITMAP，并在替换或析构时释放。
 #include <filesystem>
+#include <cstdint>
 #include <string>
+#include <vector>
 #include <windows.h>
 
 namespace desktop_orb::platform {
@@ -46,6 +48,11 @@ public:
     // 返回：保存状态、输出路径及失败原因。
     [[nodiscard]] ScreenshotResult SaveSelection(
         RECT selection, const std::filesystem::path& directory) const;
+    // 作用：把虚拟桌面选区裁剪并编码为 PNG 字节，供截图分析模块上传。
+    // 参数：selection 为屏幕坐标选区；png_bytes 接收完整 PNG；error 接收失败原因。
+    // 返回：编码成功为 true；选区无效、裁剪失败或 PNG 编码失败时为 false。
+    [[nodiscard]] bool EncodeSelectionPng(
+        RECT selection, std::vector<std::uint8_t>& png_bytes, std::wstring& error) const;
     // 作用：把虚拟桌面选区裁剪后复制到 Windows 剪贴板。
     // 参数：selection 为屏幕坐标选区。返回：复制成功状态及失败原因。
     [[nodiscard]] ScreenshotResult CopySelection(RECT selection) const;

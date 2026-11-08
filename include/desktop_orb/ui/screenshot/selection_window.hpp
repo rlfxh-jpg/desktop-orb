@@ -10,7 +10,7 @@ namespace desktop_orb::ui {
 
 // 作用：表示选区完成后用户请求的操作。
 // 参数：无。返回：无。
-enum class ScreenshotAction { copy, save, recapture, close };
+enum class ScreenshotAction { extract_text, summarize, copy, save, recapture, close };
 
 // 作用：覆盖所有显示器显示冻结画面、暗色遮罩和可拖动截图选区。
 // 参数：无。返回：无；快照由调用方持有，窗口关闭前调用方需保证其有效。
@@ -28,6 +28,9 @@ public:
     void Hide();
     // 作用：查询选区界面是否显示。参数：无。返回：显示为 true。
     [[nodiscard]] bool visible() const { return visible_; }
+    // 作用：更新大模型分析进行中的显示状态。
+    // 参数：pending 为 true 时禁用两个分析按钮并显示等待状态。返回：无。
+    void SetAnalysisPending(bool pending);
     // 作用：通知应用层执行截图操作。参数：action 为请求操作；selection 为屏幕坐标选区。
     // 返回：无；空回调时不执行操作。
     std::function<void(ScreenshotAction, RECT)> on_action;
@@ -97,6 +100,7 @@ private:
     unsigned int resize_edges_ = 0;
     bool toolbar_pressed_ = false;
     bool selected_ = false;
+    bool analysis_pending_ = false;
     bool visible_ = false;
 };
 

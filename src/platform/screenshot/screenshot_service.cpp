@@ -93,6 +93,14 @@ struct GdiPlusSession {
     ~GdiPlusSession() { if (token) Gdiplus::GdiplusShutdown(token); }
 };
 
+// 作用：管理供 GDI+ 编码使用的内存流，并在离开作用域时释放 COM 引用。
+// 参数：无。返回：无；stream 由 CreateStreamOnHGlobal 创建并由本结构独占。
+struct MemoryStream {
+    IStream* stream = nullptr;
+    // 作用：释放本结构持有的 COM 内存流。参数：无。返回：无。
+    ~MemoryStream() { if (stream) stream->Release(); }
+};
+
 // 作用：把位图保存为 PNG 文件。
 // 参数：bitmap 为有效 GDI 位图；path 为完整输出路径；error 接收中文错误原因。
 // 返回：保存成功为 true；编码器或文件写入失败时为 false。
@@ -209,6 +217,63 @@ ScreenshotResult ScreenshotService::SaveSelection(
     if (!cropped.value) { result.error = L"无法裁剪所选截图区域。"; return result; }
     result.saved = SavePng(cropped.value, result.file_path, result.error);
     return result;
+}
+
+bool ScreenshotService::EncodeSelectionPng(
+    RECT selection, std::vector<std::uint8_t>& png_bytes, std::wstring& error) const {
+    png_bytes.clear();
+    RECT clipped{};
+    if (!NormalizeSelection(selection, clipped)) {
+        error = L"请先框选有效的截图区域。";
+        return false;
+    }
+    auto cropped = CropBitmap(bitmap_, bounds_, clipped);
+    if (!cropped.value) {
+        error = L"无法裁剪所选截图区域。";
+        return false;
+    }
+
+    GdiPlusSession session;
+    if (!session.Start()) {
+        error = L"无法初始化 PNG 图片处理组件。";
+        return false;
+    }
+    Gdiplus::Bitmap image(cropped.value, nullptr);
+    CLSID encoder{};
+    if (image.GetLastStatus() != Gdiplus::Ok || !FindPngEncoder(encoder)) {
+        error = L"无法读取截图图像或找不到 PNG 编码器。";
+        return false;
+    }
+
+    MemoryStream output;
+    if (CreateStreamOnHGlobal(nullptr, TRUE, &output.stream) != S_OK || !output.stream) {
+        error = L"无法创建截图分析所需的内存流。";
+        return false;
+    }
+    if (image.Save(output.stream, &encoder, nullptr) != Gdiplus::Ok) {
+        error = L"无法将截图编码为 PNG。";
+        return false;
+    }
+
+    STATSTG size{};
+    HGLOBAL storage = nullptr;
+    if (output.stream->Stat(&size, STATFLAG_NONAME) != S_OK ||
+        GetHGlobalFromStream(output.stream, &storage) != S_OK ||
+        size.cbSize.QuadPart > static_cast<ULONGLONG>(png_bytes.max_size())) {
+        error = L"无法读取截图 PNG 数据。";
+        return false;
+    }
+    const SIZE_T byte_count = static_cast<SIZE_T>(size.cbSize.QuadPart);
+    const auto* data = static_cast<const std::uint8_t*>(GlobalLock(storage));
+    if (!data || byte_count == 0) {
+        if (data) GlobalUnlock(storage);
+        error = L"截图 PNG 数据为空。";
+        return false;
+    }
+    png_bytes.assign(data, data + byte_count);
+    GlobalUnlock(storage);
+    error.clear();
+    return true;
 }
 
 ScreenshotResult ScreenshotService::CopySelection(RECT selection) const {

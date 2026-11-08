@@ -1,7 +1,20 @@
-# 文件职责：构建 Win32 桌面程序，并把运行所需 PNG 复制到 exe 旁。
-# 图标保持为独立文件；新增图片无需修改资源脚本或编译成二进制资源。
+# 文件职责：构建 Win32 桌面程序，并复制图标和截图分析所需 Python 脚本。
+# 截图视觉分析使用 Python 开发库、pybind11 嵌入及 OpenAI Python SDK。
 cmake_minimum_required(VERSION 3.24)
 project(desktop_orb VERSION 0.1.0 LANGUAGES CXX)
+
+find_package(Python3 3.10 COMPONENTS Interpreter Development REQUIRED)
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" -m pybind11 --cmakedir
+    RESULT_VARIABLE PYBIND11_CMAKE_RESULT
+    OUTPUT_VARIABLE PYBIND11_CMAKE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+if(NOT PYBIND11_CMAKE_RESULT EQUAL 0)
+    message(FATAL_ERROR "请在当前 Python 环境执行：python -m pip install pybind11")
+endif()
+list(APPEND CMAKE_PREFIX_PATH "${PYBIND11_CMAKE_DIR}")
+find_package(pybind11 CONFIG REQUIRED)
 
 add_executable(desktop-orb WIN32
     src/main.cpp
@@ -13,6 +26,7 @@ add_executable(desktop-orb WIN32
     src/platform/window_switcher/window_catalog.cpp
     src/platform/window_switcher/thumbnail_manager.cpp
     src/platform/screenshot/screenshot_service.cpp
+    src/platform/screenshot/screenshot_ai_client.cpp
     src/ui/common/window_base.cpp
     src/ui/common/drawing.cpp
     src/ui/common/icon_image.cpp
@@ -27,7 +41,8 @@ add_executable(desktop-orb WIN32
 target_include_directories(desktop-orb PRIVATE include)
 target_compile_features(desktop-orb PRIVATE cxx_std_20)
 target_compile_definitions(desktop-orb PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN WINVER=0x0A00 _WIN32_WINNT=0x0A00)
-target_link_libraries(desktop-orb PRIVATE dwmapi gdi32 user32 shell32 gdiplus comctl32 ole32 msimg32)
+target_link_libraries(desktop-orb PRIVATE dwmapi gdi32 user32 shell32 gdiplus comctl32 ole32 msimg32
+    pybind11::embed Python3::Python)
 
 # 核心逻辑：收集所有 PNG 并在每次构建时复制，新增图片无需修改此文件。
 file(GLOB ICON_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/*.png")
@@ -35,6 +50,18 @@ add_custom_target(copy_icons ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:desktop-orb>/assets/icons"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ICON_FILES} "$<TARGET_FILE_DIR:desktop-orb>/assets/icons"
     DEPENDS desktop-orb ${ICON_FILES}
+    VERBATIM
+)
+
+# 核心逻辑：Python 文件作为可替换的运行时资源，与图标一样相对 exe 定位。
+file(GLOB SCREENSHOT_PYTHON_FILES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/python/*.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/python/requirements.txt")
+add_custom_target(copy_screenshot_python ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:desktop-orb>/assets/python"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCREENSHOT_PYTHON_FILES}
+            "$<TARGET_FILE_DIR:desktop-orb>/assets/python"
+    DEPENDS desktop-orb ${SCREENSHOT_PYTHON_FILES}
     VERBATIM
 )
 
@@ -57,4 +84,24 @@ if(BUILD_TESTING)
         target_compile_options(feature-layout-test PRIVATE /W4 /permissive- /utf-8)
     endif()
     add_test(NAME feature-layout COMMAND feature-layout-test)
+
+    add_executable(screenshot-ai-client-test
+        tests/screenshot_ai_client_test.cpp
+        src/platform/screenshot/screenshot_ai_client.cpp
+        src/platform/common/asset_path.cpp
+    )
+    target_include_directories(screenshot-ai-client-test PRIVATE include)
+    target_compile_features(screenshot-ai-client-test PRIVATE cxx_std_20)
+    target_compile_definitions(screenshot-ai-client-test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(screenshot-ai-client-test PRIVATE pybind11::embed Python3::Python user32)
+    if(MSVC)
+        target_compile_options(screenshot-ai-client-test PRIVATE /W4 /permissive- /utf-8)
+    endif()
+    add_custom_command(TARGET screenshot-ai-client-test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:screenshot-ai-client-test>/assets/python"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCREENSHOT_PYTHON_FILES}
+                "$<TARGET_FILE_DIR:screenshot-ai-client-test>/assets/python"
+        VERBATIM
+    )
+    add_test(NAME screenshot-ai-client COMMAND screenshot-ai-client-test)
 endif()

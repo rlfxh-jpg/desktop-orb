@@ -4,9 +4,11 @@
 
 #include "desktop_orb/platform/common/monitor.hpp"
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <shellapi.h>
 #include <shobjidl.h>
+#include <utility>
 #include <wrl/client.h>
 
 namespace desktop_orb {
@@ -81,6 +83,30 @@ bool ChooseScreenshotDirectory(HWND owner, std::filesystem::path& directory, boo
 
     CoUninitialize();
     return selected;
+}
+
+// 作用：把大模型分析文本复制到 Windows Unicode 剪贴板。
+// 参数：owner 为剪贴板所属窗口；text 为完整分析文本。返回：系统接管文本内存时为 true。
+bool CopyTextToClipboard(HWND owner, const std::wstring& text) {
+    const SIZE_T bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL storage = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!storage) return false;
+    auto* destination = static_cast<wchar_t*>(GlobalLock(storage));
+    if (!destination) {
+        GlobalFree(storage);
+        return false;
+    }
+    std::copy(text.c_str(), text.c_str() + text.size() + 1, destination);
+    GlobalUnlock(storage);
+    if (!OpenClipboard(owner)) {
+        GlobalFree(storage);
+        return false;
+    }
+    const bool published = EmptyClipboard() &&
+        SetClipboardData(CF_UNICODETEXT, storage) != nullptr;
+    CloseClipboard();
+    if (!published) GlobalFree(storage);
+    return published;
 }
 
 }  // 匿名命名空间结束
@@ -169,6 +195,7 @@ void App::Tick() {
     const bool escape_down = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
     if (escape_down && !previous_escape_down_) CloseOverlays();
     previous_escape_down_ = escape_down;
+    PollScreenshotAnalysis();
 }
 
 void App::ToggleMenu() {
@@ -212,6 +239,12 @@ void App::CaptureScreenshot() {
 
 void App::HandleScreenshotAction(ui::ScreenshotAction action, RECT selection) {
     switch (action) {
+        case ui::ScreenshotAction::extract_text:
+            StartScreenshotAnalysis(selection, platform::ScreenshotAiTask::extract_text);
+            return;
+        case ui::ScreenshotAction::summarize:
+            StartScreenshotAnalysis(selection, platform::ScreenshotAiTask::summarize);
+            return;
         case ui::ScreenshotAction::recapture:
             screenshot_window_.Hide();
             CaptureScreenshot();
@@ -251,6 +284,65 @@ void App::HandleScreenshotAction(ui::ScreenshotAction action, RECT selection) {
             return;
         }
     }
+}
+
+void App::StartScreenshotAnalysis(RECT selection, platform::ScreenshotAiTask task) {
+    if (screenshot_ai_pending_) return;
+
+    std::vector<std::uint8_t> image_png;
+    std::wstring error;
+    if (!screenshot_service_.EncodeSelectionPng(selection, image_png, error)) {
+        Warn(screenshot_window_.handle(), L"截图分析失败", error.c_str());
+        return;
+    }
+
+    screenshot_ai_task_ = task;
+    screenshot_ai_pending_ = true;
+    screenshot_window_.SetAnalysisPending(true);
+    try {
+        // 核心逻辑：网络请求和 Python 解释器都在后台执行，避免阻塞全屏选区窗口的消息循环。
+        screenshot_ai_future_ = std::async(std::launch::async,
+            [image = std::move(image_png), task] {
+                return platform::AnalyzeScreenshot(image, task);
+            });
+    } catch (const std::exception&) {
+        screenshot_ai_pending_ = false;
+        screenshot_window_.SetAnalysisPending(false);
+        Warn(screenshot_window_.handle(), L"截图分析失败", L"无法启动后台分析任务。");
+    }
+}
+
+void App::PollScreenshotAnalysis() {
+    if (!screenshot_ai_pending_ || !screenshot_ai_future_.valid() ||
+        screenshot_ai_future_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+        return;
+    }
+
+    platform::ScreenshotAiResult result;
+    try {
+        result = screenshot_ai_future_.get();
+    } catch (const std::exception&) {
+        result.error = L"后台分析任务意外终止。";
+    }
+    screenshot_ai_pending_ = false;
+    screenshot_window_.SetAnalysisPending(false);
+
+    const HWND owner = screenshot_window_.visible() ? screenshot_window_.handle() : orb_.handle();
+    if (!result.succeeded) {
+        Warn(owner, L"截图分析失败", result.error.c_str());
+        return;
+    }
+    if (!CopyTextToClipboard(owner, result.text)) {
+        Warn(owner, L"复制分析结果失败", L"无法将完整分析结果写入 Windows 剪贴板。");
+        return;
+    }
+
+    const wchar_t* title = screenshot_ai_task_ == platform::ScreenshotAiTask::extract_text
+        ? L"截图文字提取结果" : L"截图内容总结";
+    std::wstring message = result.text.substr(0, 1400);
+    if (result.text.size() > 1400) message += L"\n\n（内容较长，完整结果已复制到剪贴板。）";
+    else message += L"\n\n完整结果已复制到剪贴板。";
+    MessageBoxW(owner, message.c_str(), title, MB_OK | MB_ICONINFORMATION);
 }
 
 void App::CloseOverlays() {

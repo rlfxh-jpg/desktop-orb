@@ -16,7 +16,9 @@ constexpr int kToolbarHeight = 42;
 constexpr int kToolbarButtonWidth = 76;
 constexpr int kToolbarGap = 5;
 constexpr int kToolbarPadding = 6;
-constexpr int kToolbarWidth = kToolbarPadding * 2 + kToolbarButtonWidth * 4 + kToolbarGap * 3;
+constexpr int kToolbarButtonCount = 6;
+constexpr int kToolbarWidth = kToolbarPadding * 2 + kToolbarButtonWidth * kToolbarButtonCount +
+                              kToolbarGap * (kToolbarButtonCount - 1);
 constexpr int kSelectionBorderWidth = 3;
 constexpr int kResizeHitTolerance = 8;
 constexpr COLORREF kSelectionBorderColor = RGB(24, 132, 255);
@@ -72,6 +74,7 @@ bool SelectionWindow::ShowFor(platform::ScreenshotService& snapshot) {
     drag_mode_ = DragMode::none;
     toolbar_pressed_ = false;
     selected_ = false;
+    analysis_pending_ = false;
     visible_ = true;
     SetCursor(LoadCursorW(nullptr, IDC_ARROW));
     // 核心逻辑：先在隐藏状态完成首帧合成并提交分层表面，避免系统先展示未绘制的全屏窗口。
@@ -149,8 +152,14 @@ void SelectionWindow::Hide() {
     drag_mode_ = DragMode::none;
     toolbar_pressed_ = false;
     selected_ = false;
+    analysis_pending_ = false;
     snapshot_ = nullptr;
     ShowWindow(handle(), SW_HIDE);
+}
+
+void SelectionWindow::SetAnalysisPending(bool pending) {
+    analysis_pending_ = pending;
+    InvalidateRect(handle(), nullptr, FALSE);
 }
 
 POINT SelectionWindow::ScreenPoint(POINT point) const {
@@ -309,7 +318,8 @@ ScreenshotAction SelectionWindow::HitAction(POINT point) const {
     const int offset = point.x - bar.left - pad;
     const int stride = button + gap;
     const int index = offset / stride;
-    if (offset < 0 || index < 0 || index > 3 || offset % stride >= button) return ScreenshotAction::close;
+    if (offset < 0 || index < 0 || index >= kToolbarButtonCount || offset % stride >= button)
+        return ScreenshotAction::close;
     return static_cast<ScreenshotAction>(index);
 }
 
@@ -405,17 +415,21 @@ void SelectionWindow::DrawFrame(HDC dc) {
     if (selected_) {
         const RECT bar = ToClient(ToolbarBounds(), origin);
         Fill(dc, bar, Color(29, 39, 42));
-        const wchar_t* labels[] = {L"复制", L"保存", L"重新截取", L"关闭"};
+        const wchar_t* labels[] = {L"提取文字", L"总结截图", L"复制", L"保存", L"重新截取", L"关闭"};
         const UINT dpi = GetDpiForWindow(handle());
         const int pad = platform::Scale(kToolbarPadding, dpi);
         const int button = platform::Scale(kToolbarButtonWidth, dpi);
         const int height = platform::Scale(kToolbarHeight, dpi);
         const int gap = platform::Scale(kToolbarGap, dpi);
-        for (int index = 0; index < 4; ++index) {
+        for (int index = 0; index < kToolbarButtonCount; ++index) {
             RECT item{bar.left + pad + index * (button + gap), bar.top + platform::Scale(5, dpi),
                       bar.left + pad + index * (button + gap) + button, bar.top + height - platform::Scale(5, dpi)};
-            Fill(dc, item, index == 3 ? Color(67, 76, 79) : Color(44, 135, 119));
-            Text(dc, labels[index], item, platform::Scale(12, dpi), Color(255, 255, 255), FW_SEMIBOLD,
+            const bool analysis_disabled = analysis_pending_ && index < 2;
+            const COLORREF background = analysis_disabled ? Color(77, 84, 86)
+                : (index == kToolbarButtonCount - 1 ? Color(67, 76, 79) : Color(44, 135, 119));
+            Fill(dc, item, background);
+            const wchar_t* label = analysis_disabled ? L"处理中" : labels[index];
+            Text(dc, label, item, platform::Scale(12, dpi), Color(255, 255, 255), FW_SEMIBOLD,
                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
     }

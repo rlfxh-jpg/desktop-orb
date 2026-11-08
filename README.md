@@ -4,12 +4,25 @@ Windows desktop floating hub written in C++20. The first feature is a live, scro
 
 ## Build
 
-Requires Visual Studio 2022 or newer with Desktop development with C++ and CMake.
+Requires Visual Studio 2022 or newer with Desktop development with C++ and CMake, plus Python 3.10+ development files.
 
 ```powershell
+python -m pip install pybind11
+python -m pip install -r assets/python/requirements.txt
 cmake -S . -B build -A x64
 cmake --build build --config Release
 ```
+
+Screenshot text extraction and summarization call an OpenAI-compatible vision model. Configure these variables in the environment used to launch the application:
+
+```powershell
+$env:OPENAI_API_KEY = "your-api-key"
+$env:OPENAI_MODEL = "gpt-4o-mini"
+# Optional for a compatible provider:
+$env:OPENAI_BASE_URL = "https://your-provider.example/v1"
+```
+
+If Python is installed outside `PATH`, add the matching Python runtime directory to `PATH` before launching the executable so `python3xx.dll` can be loaded.
 
 Run `build\Release\desktop-orb.exe`. A floating ball appears at the edge of the primary display.
 The build copies `assets/icons/*.png` to `build\Release\assets\icons\`. Keep the `assets` directory beside the exe when distributing or moving it.
@@ -19,7 +32,7 @@ Only one instance runs across Windows login sessions. Launching the executable a
 
 - Click the ball to show its feature menu; drag it to another edge or monitor. Feature icons form a compact arc that expands as more features are added.
 - Click the window switcher icon to open the live window list on the same edge as the ball. Its small transparent button grows while hovered; after 3 seconds, its name appears. The ball hides while the list is open and returns when it closes.
-- Click the screenshot icon, then drag across the frozen desktop to select an area. The live selection size is shown in pixels. Choose **复制**, **保存**, **重新截取**, or **关闭** from the toolbar. Saving opens a folder picker; `Esc` closes the selection, and `Enter` copies it.
+- Click the screenshot icon, then drag across the frozen desktop to select an area. The live selection size is shown in pixels. Choose **提取文字**, **总结截图**, **复制**, **保存**, **重新截取**, or **关闭** from the toolbar. AI results are previewed and copied to the clipboard; saving opens a folder picker. `Esc` closes the selection, and `Enter` copies it.
 - Scroll the list, then click a window to activate it. `Esc` closes the menu or list.
 - The default global shortcut is `Ctrl+Alt+Space`.
 - Right-click the ball to open or reload the settings file, or exit.
@@ -31,7 +44,7 @@ Settings are stored at `%APPDATA%\DesktopOrb\settings.ini`. Change `Hotkey` to a
 - `app`: composes shared UI and feature modules.
 - `platform/common`: shared monitor, settings, asset path and single-instance support.
 - `platform/window_switcher`: window discovery, activation and DWM thumbnails.
-- `platform/screenshot`: virtual desktop capture, PNG output and clipboard integration.
+- `platform/screenshot`: virtual desktop capture, PNG output, clipboard integration and the embedded Python vision client.
 - `ui/screenshot`: full virtual desktop selection overlay, size feedback and post-capture actions.
 - `ui/common`: floating orb, shared window lifecycle, drawing, icon loading and feature menu.
 - `ui/window_switcher`: the window switcher panel and its interactions.
