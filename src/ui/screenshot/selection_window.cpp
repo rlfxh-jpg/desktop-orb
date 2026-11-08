@@ -48,14 +48,22 @@ void DrawSelectionBorder(HDC dc, RECT bounds) {
 
 bool SelectionWindow::Create() {
     return CreateNative(L"DesktopOrbScreenshotSelection", L"截图选区",
-        WS_POPUP, WS_EX_TOPMOST | WS_EX_TOOLWINDOW, 0, 0, 1, 1);
+        WS_POPUP, WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED, 0, 0, 1, 1);
+}
+
+SelectionWindow::~SelectionWindow() {
+    if (frame_dc_ && previous_frame_bitmap_) SelectObject(frame_dc_, previous_frame_bitmap_);
+    if (frame_bitmap_) DeleteObject(frame_bitmap_);
+    if (frame_dc_) DeleteDC(frame_dc_);
 }
 
 bool SelectionWindow::ShowFor(platform::ScreenshotService& snapshot) {
     snapshot_ = &snapshot;
     const RECT bounds = snapshot.bounds();
+    const int width = bounds.right - bounds.left;
+    const int height = bounds.bottom - bounds.top;
     if (!snapshot.ready() || !SetWindowPos(handle(), HWND_TOPMOST, bounds.left, bounds.top,
-        bounds.right - bounds.left, bounds.bottom - bounds.top, SWP_NOACTIVATE | SWP_SHOWWINDOW)) {
+        width, height, SWP_NOACTIVATE) || !EnsureFrameSurface(width, height)) {
         snapshot_ = nullptr;
         return false;
     }
@@ -63,9 +71,73 @@ bool SelectionWindow::ShowFor(platform::ScreenshotService& snapshot) {
     selected_ = false;
     visible_ = true;
     SetCursor(LoadCursorW(nullptr, IDC_CROSS));
-    InvalidateRect(handle(), nullptr, FALSE);
+    // 核心逻辑：先在隐藏状态完成首帧合成并提交分层表面，避免系统先展示未绘制的全屏窗口。
+    DrawFrame(frame_dc_);
+    if (!PresentFrame()) {
+        visible_ = false;
+        snapshot_ = nullptr;
+        return false;
+    }
+    ShowWindow(handle(), SW_SHOW);
     SetForegroundWindow(handle());
     return true;
+}
+
+bool SelectionWindow::EnsureFrameSurface(int width, int height) {
+    if (frame_dc_ && frame_bitmap_ && frame_width_ == width && frame_height_ == height) return true;
+    if (frame_dc_ && previous_frame_bitmap_) SelectObject(frame_dc_, previous_frame_bitmap_);
+    if (frame_bitmap_) DeleteObject(frame_bitmap_);
+    if (frame_dc_) DeleteDC(frame_dc_);
+    frame_dc_ = nullptr;
+    frame_bitmap_ = nullptr;
+    previous_frame_bitmap_ = nullptr;
+    frame_width_ = 0;
+    frame_height_ = 0;
+
+    frame_dc_ = CreateCompatibleDC(nullptr);
+    if (!frame_dc_) return false;
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width;
+    info.bmiHeader.biHeight = -height;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    void* pixels = nullptr;
+    frame_bitmap_ = CreateDIBSection(frame_dc_, &info, DIB_RGB_COLORS, &pixels, nullptr, 0);
+    if (!frame_bitmap_ || !pixels) {
+        if (frame_bitmap_) DeleteObject(frame_bitmap_);
+        DeleteDC(frame_dc_);
+        frame_bitmap_ = nullptr;
+        frame_dc_ = nullptr;
+        return false;
+    }
+    previous_frame_bitmap_ = SelectObject(frame_dc_, frame_bitmap_);
+    if (!previous_frame_bitmap_ || previous_frame_bitmap_ == HGDI_ERROR) {
+        DeleteObject(frame_bitmap_);
+        DeleteDC(frame_dc_);
+        frame_bitmap_ = nullptr;
+        frame_dc_ = nullptr;
+        previous_frame_bitmap_ = nullptr;
+        return false;
+    }
+    frame_width_ = width;
+    frame_height_ = height;
+    return true;
+}
+
+bool SelectionWindow::PresentFrame() {
+    if (!frame_dc_ || !snapshot_) return false;
+    POINT destination{snapshot_->bounds().left, snapshot_->bounds().top};
+    POINT source{};
+    SIZE size{frame_width_, frame_height_};
+    BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, 0};
+    HDC screen = GetDC(nullptr);
+    if (!screen) return false;
+    const BOOL updated = UpdateLayeredWindow(handle(), screen, &destination, &size,
+                                              frame_dc_, &source, 0, &blend, ULW_ALPHA);
+    ReleaseDC(nullptr, screen);
+    return updated != FALSE;
 }
 
 void SelectionWindow::Hide() {
@@ -134,9 +206,17 @@ void SelectionWindow::Dispatch(ScreenshotAction action) {
 
 void SelectionWindow::Paint() {
     PAINTSTRUCT paint{};
-    HDC dc = BeginPaint(handle(), &paint);
-    RECT client{};
-    GetClientRect(handle(), &client);
+    BeginPaint(handle(), &paint);
+    if (frame_dc_ && snapshot_) {
+        DrawFrame(frame_dc_);
+        PresentFrame();
+    }
+    EndPaint(handle(), &paint);
+}
+
+void SelectionWindow::DrawFrame(HDC dc) {
+    RECT client{0, 0, frame_width_, frame_height_};
+    if (!dc || client.right <= 0 || client.bottom <= 0) return;
     const RECT desktop = snapshot_ ? snapshot_->bounds() : RECT{};
     const POINT origin{desktop.left, desktop.top};
 
@@ -226,7 +306,6 @@ void SelectionWindow::Paint() {
                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
     }
-    EndPaint(handle(), &paint);
 }
 
 LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {

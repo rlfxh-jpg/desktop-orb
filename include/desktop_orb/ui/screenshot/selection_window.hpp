@@ -16,6 +16,8 @@ enum class ScreenshotAction { copy, save, recapture, close };
 // 参数：无。返回：无；快照由调用方持有，窗口关闭前调用方需保证其有效。
 class SelectionWindow final : public WindowBase {
 public:
+    // 作用：销毁选区后台绘图设备上下文和位图。参数：无。返回：无。
+    ~SelectionWindow() override;
     // 作用：创建初始隐藏的截图选区窗口。参数：无。返回：创建成功为 true。
     bool Create();
     // 作用：显示快照并重置为等待鼠标框选状态。
@@ -43,6 +45,15 @@ private:
     [[nodiscard]] RECT Selection() const;
     // 作用：重新绘制冻结桌面、遮罩、选区和操作栏。参数：无。返回：无。
     void Paint();
+    // 作用：确保指定尺寸的 32 位后台绘图表面存在。
+    // 参数：width、height 为虚拟桌面像素尺寸。返回：资源准备成功为 true。
+    bool EnsureFrameSurface(int width, int height);
+    // 作用：把已完整绘制的后台表面一次性更新到分层窗口。
+    // 参数：无。返回：Windows 接受图像更新为 true。
+    bool PresentFrame();
+    // 作用：在后台设备上下文绘制冻结桌面和所有选区 UI。
+    // 参数：dc 为尺寸与虚拟桌面相同的目标设备上下文。返回：无。
+    void DrawFrame(HDC dc);
     // 作用：根据选区尺寸计算工具栏屏幕矩形。参数：无。返回：屏幕坐标矩形。
     [[nodiscard]] RECT ToolbarBounds() const;
     // 作用：在指定操作栏局部点命中操作按钮。参数：point 为客户区坐标。
@@ -53,6 +64,11 @@ private:
     void Dispatch(ScreenshotAction action);
 
     platform::ScreenshotService* snapshot_ = nullptr;
+    HDC frame_dc_ = nullptr;
+    HBITMAP frame_bitmap_ = nullptr;
+    HGDIOBJ previous_frame_bitmap_ = nullptr;
+    int frame_width_ = 0;
+    int frame_height_ = 0;
     POINT anchor_{};
     POINT cursor_{};
     bool dragging_ = false;
