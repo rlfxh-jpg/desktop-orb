@@ -1,5 +1,5 @@
-// 文件职责：在后台调用嵌入式 Python 截图分析模块，并转换其结果供应用层显示。
-// Python 解释器仅在本次调用所在的工作线程内创建和销毁；不访问 Win32 界面对象。
+// 文件职责：在后台通过嵌入式 Python 调用编译后的截图分析扩展模块，并转换结果供应用层显示。
+// Python 解释器在进程内初始化一次并跨请求复用；本模块不访问 Win32 界面对象。
 #include "desktop_orb/platform/screenshot/screenshot_ai_client.hpp"
 
 #include "desktop_orb/platform/common/asset_path.hpp"
@@ -47,7 +47,7 @@ ScreenshotAiResult AnalyzeScreenshot(
         py::gil_scoped_acquire gil;
         try {
             const auto worker_directory = AssetPath(L"python");
-            if (worker_directory.empty()) return {false, {}, L"无法定位截图大模型脚本目录。"};
+            if (worker_directory.empty()) return {false, {}, L"无法定位截图大模型扩展模块目录。"};
             py::module_::import("sys").attr("path").attr("insert")(0, worker_directory.wstring());
             const py::object worker = py::module_::import("llm_worker");
             const py::bytes image(reinterpret_cast<const char*>(image_png.data()), image_png.size());

@@ -8,10 +8,13 @@ Requires Visual Studio 2022 or newer with Desktop development with C++ and CMake
 
 ```powershell
 python -m pip install pybind11
+python -m pip install Cython
 python -m pip install -r assets/python/requirements.txt
 cmake -S . -B build -A x64
 cmake --build build --config Release
 ```
+
+The build compiles `assets/python/llm_worker.py` with Cython into a Python extension DLL (`llm_worker*.pyd`) and copies it to `build\Release\assets\python\`. The executable imports this compiled module through its embedded Python interpreter. The matching Python runtime and the packages in `assets/python/requirements.txt` are still required; the `.pyd` is an extension module, not a standalone replacement for the Python runtime.
 
 Screenshot text extraction and summarization call an OpenAI-compatible vision model. Configure these variables in the environment used to launch the application:
 
@@ -22,7 +25,7 @@ $env:OPENAI_MODEL = "gpt-4o-mini"
 $env:OPENAI_BASE_URL = "https://your-provider.example/v1"
 ```
 
-If Python is installed outside `PATH`, add the matching Python runtime directory to `PATH` before launching the executable so `python3xx.dll` can be loaded.
+If Python is installed outside `PATH`, add the matching Python runtime directory to `PATH` before launching the executable so `python3xx.dll` can be loaded. Install the OpenAI Python SDK into the same Python environment used by CMake.
 
 Run `build\Release\desktop-orb.exe`. A floating ball appears at the edge of the primary display.
 The build copies `assets/icons/*.png` to `build\Release\assets\icons\`. Keep the `assets` directory beside the exe when distributing or moving it.
