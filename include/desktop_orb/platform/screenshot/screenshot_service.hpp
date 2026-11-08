@@ -42,8 +42,10 @@ public:
     // 参数：无。返回：服务持有的 HBITMAP；调用方不得释放或修改。
     [[nodiscard]] HBITMAP bitmap() const { return bitmap_; }
     // 作用：把虚拟桌面选区裁剪后保存为 PNG。
-    // 参数：selection 为屏幕坐标选区。返回：保存状态、输出路径及失败原因。
-    [[nodiscard]] ScreenshotResult SaveSelection(RECT selection) const;
+    // 参数：selection 为屏幕坐标选区；directory 为用户选择的现有输出文件夹。
+    // 返回：保存状态、输出路径及失败原因。
+    [[nodiscard]] ScreenshotResult SaveSelection(
+        RECT selection, const std::filesystem::path& directory) const;
     // 作用：把虚拟桌面选区裁剪后复制到 Windows 剪贴板。
     // 参数：selection 为屏幕坐标选区。返回：复制成功状态及失败原因。
     [[nodiscard]] ScreenshotResult CopySelection(RECT selection) const;

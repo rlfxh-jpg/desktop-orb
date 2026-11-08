@@ -4,7 +4,10 @@
 
 #include "desktop_orb/platform/common/monitor.hpp"
 #include <algorithm>
+#include <filesystem>
 #include <shellapi.h>
+#include <shobjidl.h>
+#include <wrl/client.h>
 
 namespace desktop_orb {
 namespace {
@@ -29,6 +32,55 @@ RECT Bounds(HWND window) {
 // 参数：owner 为所属窗口；title 为标题；text 为警告内容。返回：无。
 void Warn(HWND owner, const wchar_t* title, const wchar_t* text) {
     MessageBoxW(owner, text, title, MB_OK | MB_ICONWARNING);
+}
+
+// 作用：通过 Windows 原生文件夹选择器取得截图输出目录。
+// 参数：owner 为对话框所属窗口；directory 接收选中的路径；canceled 接收用户是否主动取消。
+// 返回：选择了有效文件夹时为 true；取消或对话框初始化失败时为 false。
+bool ChooseScreenshotDirectory(HWND owner, std::filesystem::path& directory, bool& canceled) {
+    directory.clear();
+    canceled = false;
+    const HRESULT apartment = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(apartment)) return false;
+
+    const bool selected = [&] {
+        Microsoft::WRL::ComPtr<IFileOpenDialog> dialog;
+        HRESULT result = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                          IID_PPV_ARGS(dialog.GetAddressOf()));
+        if (FAILED(result)) return false;
+
+        DWORD options = 0;
+        result = dialog->GetOptions(&options);
+        if (FAILED(result) || FAILED(dialog->SetOptions(
+                options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST))) {
+            return false;
+        }
+        dialog->SetTitle(L"选择截图保存文件夹");
+        dialog->SetOkButtonLabel(L"选择文件夹");
+
+        // 核心逻辑：取消是正常用户操作，单独返回状态，避免弹出“保存失败”提示。
+        result = dialog->Show(owner);
+        if (result == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+            canceled = true;
+            return false;
+        }
+        if (FAILED(result)) return false;
+
+        Microsoft::WRL::ComPtr<IShellItem> folder;
+        if (FAILED(dialog->GetResult(folder.GetAddressOf()))) return false;
+        PWSTR selected_path = nullptr;
+        result = folder->GetDisplayName(SIGDN_FILESYSPATH, &selected_path);
+        if (FAILED(result) || !selected_path) {
+            if (selected_path) CoTaskMemFree(selected_path);
+            return false;
+        }
+        directory = selected_path;
+        CoTaskMemFree(selected_path);
+        return true;
+    }();
+
+    CoUninitialize();
+    return selected;
 }
 
 }  // 匿名命名空间结束
@@ -181,7 +233,14 @@ void App::HandleScreenshotAction(ui::ScreenshotAction action, RECT selection) {
             return;
         }
         case ui::ScreenshotAction::save: {
-            const auto result = screenshot_service_.SaveSelection(selection);
+            std::filesystem::path directory;
+            bool canceled = false;
+            if (!ChooseScreenshotDirectory(screenshot_window_.handle(), directory, canceled)) {
+                if (!canceled)
+                    Warn(screenshot_window_.handle(), L"选择文件夹失败", L"无法打开文件夹选择窗口。");
+                return;
+            }
+            const auto result = screenshot_service_.SaveSelection(selection, directory);
             if (!result.saved) {
                 Warn(screenshot_window_.handle(), L"保存失败", result.error.c_str());
                 return;

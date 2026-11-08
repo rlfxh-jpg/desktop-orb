@@ -5,7 +5,6 @@
 #include <windows.h>
 #include <objidl.h>
 #include <gdiplus.h>
-#include <shlobj.h>
 #include <algorithm>
 #include <cwchar>
 #include <utility>
@@ -70,19 +69,6 @@ bool FindPngEncoder(CLSID& encoder) {
     return false;
 }
 
-// 作用：取得并创建用户图片目录下的 DesktopOrb 目录。
-// 参数：无。返回：成功目录；系统查询或目录创建失败时为空路径。
-std::filesystem::path ScreenshotDirectory() {
-    PWSTR known_folder = nullptr;
-    if (SHGetKnownFolderPath(FOLDERID_Pictures, KF_FLAG_CREATE, nullptr, &known_folder) != S_OK) return {};
-    std::filesystem::path directory(known_folder);
-    CoTaskMemFree(known_folder);
-    directory /= L"DesktopOrb";
-    std::error_code error;
-    std::filesystem::create_directories(directory, error);
-    return error ? std::filesystem::path{} : directory;
-}
-
 // 作用：生成包含本地日期、时间和毫秒的 PNG 文件名。
 // 参数：无。返回：可与截图目录组合的文件名。
 std::wstring ScreenshotFilename() {
@@ -120,7 +106,7 @@ bool SavePng(HBITMAP bitmap, const std::filesystem::path& path, std::wstring& er
         return false;
     }
     if (image.Save(path.c_str(), &encoder, nullptr) != Gdiplus::Ok) {
-        error = L"无法将截图写入图片\\DesktopOrb 目录。";
+        error = L"无法将 PNG 截图写入所选文件夹。";
         return false;
     }
     return true;
@@ -208,12 +194,16 @@ bool ScreenshotService::NormalizeSelection(RECT selection, RECT& cropped) const 
     return cropped.right > cropped.left && cropped.bottom > cropped.top;
 }
 
-ScreenshotResult ScreenshotService::SaveSelection(RECT selection) const {
+ScreenshotResult ScreenshotService::SaveSelection(
+    RECT selection, const std::filesystem::path& directory) const {
     ScreenshotResult result;
     RECT clipped{};
     if (!NormalizeSelection(selection, clipped)) { result.error = L"请先框选有效的截图区域。"; return result; }
-    const auto directory = ScreenshotDirectory();
-    if (directory.empty()) { result.error = L"无法创建用户图片目录下的 DesktopOrb 文件夹。"; return result; }
+    std::error_code directory_error;
+    if (directory.empty() || !std::filesystem::is_directory(directory, directory_error) || directory_error) {
+        result.error = L"所选文件夹不存在或无法访问。";
+        return result;
+    }
     result.file_path = directory / ScreenshotFilename();
     auto cropped = CropBitmap(bitmap_, bounds_, clipped);
     if (!cropped.value) { result.error = L"无法裁剪所选截图区域。"; return result; }
