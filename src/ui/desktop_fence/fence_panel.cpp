@@ -10,9 +10,9 @@
 namespace desktop_orb::ui {
 namespace {
 
-constexpr int kCardWidth = 390;
-constexpr int kCardHeight = 310;
-constexpr int kCardGap = 18;
+constexpr int kCardWidth = 520;
+constexpr int kCardHeight = 400;
+constexpr int kCardGap = 16;
 constexpr platform::DesktopFenceCategory kCategories[] = {
     platform::DesktopFenceCategory::programs,
     platform::DesktopFenceCategory::folders,
@@ -43,12 +43,9 @@ bool FencePanel::Create() {
 
 // 作用：在指定显示器工作区内展示四张围栏卡片。
 // 参数：monitor 为悬浮球所在显示器；align_right 为卡片组靠右排列标志。
-// 返回：无；若卡片组已显示则改为隐藏，若空间不足则按工作区缩小卡片。
+// 返回：无；若卡片组已显示则保持打开，若空间不足则按工作区缩小卡片。
 void FencePanel::ShowFor(const platform::Monitor& monitor, bool align_right) {
-    if (visible_) {
-        Hide();
-        return;
-    }
+    if (visible_) return;
     const int work_width = monitor.work.right - monitor.work.left;
     const int work_height = monitor.work.bottom - monitor.work.top;
     const UINT dpi = monitor.dpi ? monitor.dpi : 96;
@@ -78,6 +75,9 @@ void FencePanel::ShowFor(const platform::Monitor& monitor, bool align_right) {
         }
         return;
     }
+    // 核心逻辑：卡片全部显示成功后才隐藏桌面图标；服务记录原始可见状态，
+    // 围栏关闭或对象销毁时恢复，避免覆盖用户此前手动隐藏桌面图标的设置。
+    desktop_icon_visibility_.Hide();
     visible_ = true;
     if (cards_[0]) SetForegroundWindow(cards_[0]->handle());
 }
@@ -90,6 +90,7 @@ void FencePanel::Hide() {
     for (const auto& card : cards_) {
         if (card) card->Hide();
     }
+    desktop_icon_visibility_.Restore();
     if (on_closed) on_closed();
 }
 

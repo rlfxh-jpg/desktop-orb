@@ -3,6 +3,7 @@
 // 文件职责：管理桌面围栏的四块独立卡片和统一显示、关闭状态。
 // 每块卡片自行绘制图标网格并持有 HWND；项目枚举与打开交给 platform/desktop_fence。
 #include "desktop_orb/platform/common/monitor.hpp"
+#include "desktop_orb/platform/desktop_fence/desktop_icon_visibility.hpp"
 #include <array>
 #include <functional>
 #include <memory>
@@ -39,6 +40,7 @@ public:
 
 private:
     std::array<std::unique_ptr<FenceCard>, 4> cards_;
+    platform::DesktopIconVisibility desktop_icon_visibility_;
     bool visible_ = false;
 };
 

@@ -146,7 +146,10 @@ bool App::Initialize() {
         ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
     };
     orb_.on_click = [this] { ToggleMenu(); };
-    orb_.on_drag_start = [this] { CloseOverlays(); };
+    orb_.on_drag_start = [this] {
+        if (fence_panel_.visible()) menu_.Hide();
+        else CloseOverlays();
+    };
     orb_.on_moved = [this](POINT position) { SavePosition(position); };
     orb_.on_tick = [this] { Tick(); };
     orb_.on_hotkey = [this] { ToggleMenu(); };
@@ -197,22 +200,24 @@ void App::Tick() {
         if (menu_.visible()) {
             for (HWND button : menu_.Handles()) inside = inside || Contains(Bounds(button), cursor);
         }
-        if (!inside) CloseOverlays();
+        if (!inside) {
+            if (fence_panel_.visible()) menu_.Hide();
+            else CloseOverlays();
+        }
     }
     previous_left_down_ = left_down;
 
     const bool escape_down = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
-    if (escape_down && !previous_escape_down_) CloseOverlays();
+    if (escape_down && !previous_escape_down_) {
+        if (fence_panel_.visible()) menu_.Hide();
+        else CloseOverlays();
+    }
     previous_escape_down_ = escape_down;
     PollScreenshotAnalysis();
 }
 
 void App::ToggleMenu() {
     if (screenshot_window_.visible()) return;
-    if (fence_panel_.visible()) {
-        fence_panel_.Hide();
-        return;
-    }
     if (menu_.visible()) { menu_.Hide(); return; }
     panel_.Hide();
     const RECT bounds = orb_.Bounds();

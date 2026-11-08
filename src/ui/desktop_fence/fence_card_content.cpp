@@ -8,10 +8,10 @@
 namespace desktop_orb::ui {
 namespace {
 
-constexpr int kPadding = 16;
-constexpr int kHeaderHeight = 64;
-constexpr int kCellWidth = 80;
-constexpr int kCellHeight = 96;
+constexpr int kPadding = 8;
+constexpr int kHeaderHeight = 56;
+constexpr int kCellWidth = 68;
+constexpr int kCellHeight = 88;
 constexpr int kIconSize = 48;
 constexpr COLORREF kText = RGB(35, 43, 57);
 constexpr COLORREF kDivider = RGB(205, 212, 221);
@@ -41,7 +41,7 @@ void DrawFenceContents(HDC dc, RECT client, UINT dpi,
     const int cell_width = platform::Scale(kCellWidth, dpi);
     const int cell_height = platform::Scale(kCellHeight, dpi);
     const int icon_size = platform::Scale(kIconSize, dpi);
-    const int content_top = platform::Scale(kHeaderHeight + 16, dpi);
+    const int content_top = platform::Scale(kHeaderHeight + 10, dpi);
     const int content_bottom = client.bottom - padding;
     const int columns = ColumnCount(client, dpi);
     const int visible_rows = std::max(1, (content_bottom - content_top) / cell_height);

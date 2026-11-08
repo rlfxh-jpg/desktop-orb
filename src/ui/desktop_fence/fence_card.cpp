@@ -18,12 +18,12 @@ namespace {
 
 constexpr UINT_PTR kRefreshTimerId = 3;
 constexpr UINT kRefreshIntervalMs = 2500;
-constexpr int kCardWidth = 390;
-constexpr int kCardHeight = 310;
-constexpr int kCardHeaderHeight = 64;
-constexpr int kCardPadding = 16;
-constexpr int kGridCellWidth = 80;
-constexpr int kGridCellHeight = 96;
+constexpr int kCardWidth = 520;
+constexpr int kCardHeight = 400;
+constexpr int kCardHeaderHeight = 56;
+constexpr int kCardPadding = 8;
+constexpr int kGridCellWidth = 68;
+constexpr int kGridCellHeight = 88;
 
 }  // 匿名命名空间结束
 class FenceCardWindow final : public WindowBase, public FenceCard {
@@ -107,7 +107,23 @@ protected:
                 HDC dc = BeginPaint(handle(), &paint);
                 RECT client{};
                 GetClientRect(handle(), &client);
-                PaintCard(dc, client);
+                const int width = client.right - client.left;
+                const int height = client.bottom - client.top;
+                HDC buffer = CreateCompatibleDC(dc);
+                HBITMAP bitmap = buffer && width > 0 && height > 0
+                    ? CreateCompatibleBitmap(dc, width, height) : nullptr;
+                HGDIOBJ previous = bitmap ? SelectObject(buffer, bitmap) : nullptr;
+                if (bitmap && previous && previous != HGDI_ERROR) {
+                    // 核心逻辑：先将壁纸、背景和图标绘入离屏位图，再一次性复制到窗口，
+                    // 避免滚动或状态变化时逐层显示中间画面造成闪烁。
+                    PaintCard(buffer, client);
+                    BitBlt(dc, 0, 0, width, height, buffer, 0, 0, SRCCOPY);
+                    SelectObject(buffer, previous);
+                } else {
+                    PaintCard(dc, client);
+                }
+                if (bitmap) DeleteObject(bitmap);
+                if (buffer) DeleteDC(buffer);
                 EndPaint(handle(), &paint);
                 return 0;
             }
@@ -212,7 +228,7 @@ private:
         GetClientRect(handle(), &client);
         const UINT dpi = GetDpiForWindow(handle());
         const int cell_height = platform::Scale(kGridCellHeight, dpi);
-        const int content_top = platform::Scale(kCardHeaderHeight + 16, dpi);
+        const int content_top = platform::Scale(kCardHeaderHeight + 10, dpi);
         const int content_height = std::max(0, static_cast<int>(client.bottom) - content_top -
                                                platform::Scale(kCardPadding, dpi));
         visible_rows = std::max(1, content_height / cell_height);
@@ -228,7 +244,7 @@ private:
         GetClientRect(handle(), &client);
         const UINT dpi = GetDpiForWindow(handle());
         const int padding = platform::Scale(kCardPadding, dpi);
-        const int content_top = platform::Scale(kCardHeaderHeight + 16, dpi);
+        const int content_top = platform::Scale(kCardHeaderHeight + 10, dpi);
         const int cell_width = platform::Scale(kGridCellWidth, dpi);
         const int cell_height = platform::Scale(kGridCellHeight, dpi);
         if (point.x < padding || point.x >= client.right - padding || point.y < content_top)
@@ -258,7 +274,7 @@ private:
         GetClientRect(handle(), &client);
         const UINT dpi = GetDpiForWindow(handle());
         const int track_x = client.right - platform::Scale(kCardPadding, dpi);
-        const int track_top = platform::Scale(kCardHeaderHeight + 16, dpi);
+        const int track_top = platform::Scale(kCardHeaderHeight + 10, dpi);
         const int track_bottom = client.bottom - platform::Scale(kCardPadding, dpi);
         return point.x >= track_x - platform::Scale(8, dpi) && point.x <= track_x +
             platform::Scale(4, dpi) && point.y >= track_top && point.y <= track_bottom;
@@ -287,7 +303,7 @@ private:
         RECT client{};
         GetClientRect(handle(), &client);
         const UINT dpi = GetDpiForWindow(handle());
-        const int top = platform::Scale(kCardHeaderHeight + 16, dpi);
+        const int top = platform::Scale(kCardHeaderHeight + 10, dpi);
         const int bottom = client.bottom - platform::Scale(kCardPadding, dpi);
         const int track_height = std::max(1, bottom - top);
         const int next = std::clamp((y - top) * maximum / track_height, 0, maximum);
