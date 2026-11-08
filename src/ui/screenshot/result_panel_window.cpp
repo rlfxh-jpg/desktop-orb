@@ -51,22 +51,36 @@ void ResultPanelWindow::SetContent(std::wstring title, std::wstring text) {
         SendMessageW(edit_, EM_SETSEL, 0, 0);
         SendMessageW(edit_, EM_SCROLLCARET, 0, 0);
     }
-    if (handle()) InvalidateRect(handle(), nullptr, TRUE);
+    if (handle()) InvalidateRect(handle(), nullptr, FALSE);
 }
 
 void ResultPanelWindow::ShowAt(RECT bounds) {
     if (!handle() || bounds.right <= bounds.left || bounds.bottom <= bounds.top) return;
-    if (!SetWindowPos(handle(), HWND_TOPMOST, bounds.left, bounds.top,
+
+    RECT current{};
+    const bool is_visible = IsWindowVisible(handle()) != FALSE;
+    const bool has_current_bounds = GetWindowRect(handle(), &current) != FALSE;
+    const bool same_bounds = has_current_bounds && current.left == bounds.left &&
+        current.top == bounds.top && current.right == bounds.right &&
+        current.bottom == bounds.bottom;
+    if (is_visible && same_bounds) return;
+
+    const bool size_changed = !has_current_bounds ||
+        current.right - current.left != bounds.right - bounds.left ||
+        current.bottom - current.top != bounds.bottom - bounds.top;
+    if (!SetWindowPos(handle(), nullptr, bounds.left, bounds.top,
             bounds.right - bounds.left, bounds.bottom - bounds.top,
-            SWP_NOACTIVATE | SWP_SHOWWINDOW)) {
+            SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW)) {
         ShowWindow(handle(), SW_HIDE);
         return;
     }
-    RECT client{};
-    GetClientRect(handle(), &client);
-    LayoutControls(client.right - client.left, client.bottom - client.top,
-                   GetDpiForWindow(handle()));
-    InvalidateRect(handle(), nullptr, TRUE);
+    if (size_changed) {
+        RECT client{};
+        GetClientRect(handle(), &client);
+        LayoutControls(client.right - client.left, client.bottom - client.top,
+                       GetDpiForWindow(handle()));
+    }
+    InvalidateRect(handle(), nullptr, FALSE);
 }
 
 void ResultPanelWindow::Hide() {

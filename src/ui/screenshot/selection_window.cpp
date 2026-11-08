@@ -25,6 +25,8 @@ constexpr int kResultsHeight = 260;
 constexpr int kSelectionBorderWidth = 3;
 constexpr int kResizeHitTolerance = 8;
 constexpr COLORREF kSelectionBorderColor = RGB(24, 132, 255);
+constexpr UINT_PTR kResultPanelRestoreTimerId = 1;
+constexpr UINT kResultPanelRestoreDelayMs = 1000;
 
 // 作用：把屏幕坐标矩形转换为以虚拟桌面原点为基准的客户区坐标。
 // 参数：screen 为屏幕矩形；origin 为窗口屏幕原点。返回：客户区矩形。
@@ -73,6 +75,7 @@ SelectionWindow::~SelectionWindow() {
 }
 
 bool SelectionWindow::ShowFor(platform::ScreenshotService& snapshot) {
+    KillTimer(handle(), kResultPanelRestoreTimerId);
     snapshot_ = &snapshot;
     const RECT bounds = snapshot.bounds();
     const int width = bounds.right - bounds.left;
@@ -162,6 +165,7 @@ bool SelectionWindow::PresentFrame() {
 
 void SelectionWindow::Hide() {
     if (!visible_) return;
+    KillTimer(handle(), kResultPanelRestoreTimerId);
     visible_ = false;
     drag_mode_ = DragMode::none;
     toolbar_pressed_ = false;
@@ -317,7 +321,11 @@ void SelectionWindow::UpdateDrag(POINT client_point) {
                                                  desktop.bottom);
         }
     }
-    LayoutResultPanel();
+    if (analysis_result_visible_) {
+        // 核心逻辑：选区移动期间隐藏结果面板，并在每次鼠标移动后重新等待一秒。
+        result_panel_.Hide();
+        SetTimer(handle(), kResultPanelRestoreTimerId, kResultPanelRestoreDelayMs, nullptr);
+    }
 }
 
 RECT SelectionWindow::ToolbarBounds() const {
@@ -347,17 +355,46 @@ RECT SelectionWindow::ResultsBounds() const {
     const int width = std::min(platform::Scale(kResultsWidth, dpi), desktop_width);
     const int height = std::min(platform::Scale(kResultsHeight, dpi), desktop_height);
     const int gap = platform::Scale(6, dpi);
+    const RECT selection = Selection();
     const RECT toolbar = ToolbarBounds();
-    const int left = std::clamp(static_cast<int>(toolbar.left), static_cast<int>(desktop.left),
+    const auto fits = [&](RECT candidate) {
+        const bool inside_desktop = candidate.left >= desktop.left &&
+            candidate.top >= desktop.top && candidate.right <= desktop.right &&
+            candidate.bottom <= desktop.bottom;
+        const bool overlaps_selection = candidate.left < selection.right &&
+            candidate.right > selection.left && candidate.top < selection.bottom &&
+            candidate.bottom > selection.top;
+        const bool overlaps_toolbar = candidate.left < toolbar.right &&
+            candidate.right > toolbar.left && candidate.top < toolbar.bottom &&
+            candidate.bottom > toolbar.top;
+        return inside_desktop && !overlaps_selection && !overlaps_toolbar;
+    };
+    const int left = std::clamp(static_cast<int>(toolbar.left),
+                                static_cast<int>(desktop.left),
                                 static_cast<int>(desktop.right) - width);
-    int top = toolbar.bottom + gap;
-    if (top + height > desktop.bottom) top = toolbar.top - height - gap;
-    top = std::clamp(top, static_cast<int>(desktop.top), static_cast<int>(desktop.bottom) - height);
-    return {left, top, left + width, top + height};
+    const RECT below_toolbar{left, toolbar.bottom + gap,
+                             left + width, toolbar.bottom + gap + height};
+    if (fits(below_toolbar)) return below_toolbar;
+
+    // 核心逻辑：操作栏下方空间不足时，把结果面板放到截图选区上方，避免遮住截图像素。
+    const int selection_left = std::clamp(static_cast<int>(selection.left),
+        static_cast<int>(desktop.left), static_cast<int>(desktop.right) - width);
+    const RECT above_selection{selection_left, selection.top - gap - height,
+                               selection_left + width, selection.top - gap};
+    if (fits(above_selection)) return above_selection;
+
+    const RECT left_of_selection{selection.left - gap - width, selection.top,
+                                 selection.left - gap, selection.top + height};
+    if (fits(left_of_selection)) return left_of_selection;
+    const RECT right_of_selection{selection.right + gap, selection.top,
+                                  selection.right + gap + width, selection.top + height};
+    if (fits(right_of_selection)) return right_of_selection;
+
+    return {};
 }
 
 void SelectionWindow::LayoutResultPanel() {
-    if (!snapshot_) {
+    if (!snapshot_ || drag_mode_ != DragMode::none) {
         result_panel_.Hide();
         return;
     }
@@ -545,6 +582,10 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 drag_mode_ = DragMode::create;
                 selection_ = {screen_point.x, screen_point.y, screen_point.x, screen_point.y};
             }
+            if (drag_mode_ != DragMode::none && analysis_result_visible_) {
+                KillTimer(handle(), kResultPanelRestoreTimerId);
+                result_panel_.Hide();
+            }
             SetCapture(handle());
             UpdateCursor(point);
             InvalidateRect(handle(), nullptr, FALSE);
@@ -587,6 +628,14 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             resize_edges_ = 0;
             InvalidateRect(handle(), nullptr, FALSE);
             return 0;
+        case WM_TIMER:
+            if (wparam == kResultPanelRestoreTimerId) {
+                KillTimer(handle(), kResultPanelRestoreTimerId);
+                if (visible_ && drag_mode_ == DragMode::none && analysis_result_visible_)
+                    LayoutResultPanel();
+                return 0;
+            }
+            return WindowBase::HandleMessage(message, wparam, lparam);
         case WM_KEYDOWN:
             if (wparam == VK_ESCAPE) Dispatch(ScreenshotAction::close);
             else if (wparam == VK_RETURN && selected_) Dispatch(ScreenshotAction::copy);
