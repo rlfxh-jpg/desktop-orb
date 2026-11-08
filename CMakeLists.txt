@@ -63,6 +63,7 @@ if(BUILD_TESTING)
     add_executable(screenshot-ai-client-test
         tests/screenshot_ai_client_test.cpp
         src/platform/screenshot/screenshot_ai_client.cpp
+        src/platform/common/settings.cpp
         src/platform/common/asset_path.cpp
     )
     target_include_directories(screenshot-ai-client-test PRIVATE include)

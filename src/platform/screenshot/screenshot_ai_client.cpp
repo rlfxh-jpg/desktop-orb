@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cwctype>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -396,13 +398,37 @@ std::wstring ExtractApiError(std::string_view body) {
     if (!parsed) return {};
     const JsonValue* error = FindMember(*parsed, L"error");
     const JsonValue* message = error ? FindMember(*error, L"message") : nullptr;
-    return message && message->type == JsonValue::Type::string ? message->string_value : L"";
+    const JsonValue* code = error ? FindMember(*error, L"code") : nullptr;
+    const JsonValue* type = error ? FindMember(*error, L"type") : nullptr;
+    std::wstring detail = message && message->type == JsonValue::Type::string
+        ? message->string_value : std::wstring{};
+    // 核心逻辑：服务商常把 quota/rate limit 的机器可读分类放在 code 或 type，而非 message。
+    for (const JsonValue* field : {code, type}) {
+        if (field && field->type == JsonValue::Type::string && !field->string_value.empty()) {
+            if (!detail.empty()) detail += L" ";
+            detail += field->string_value;
+        }
+    }
+    return detail;
 }
 
 // 作用：把服务端响应中的结构化错误或 HTTP 状态转换为用户可见文本。
 // 参数：status 为 HTTP 状态码；body 为响应 UTF-8 内容。返回：可显示的错误信息。
 std::wstring FormatHttpError(DWORD status, std::string_view body) {
     const auto api_error = ExtractApiError(body);
+    if (status == 429) {
+        std::wstring lower_error = api_error;
+        std::transform(lower_error.begin(), lower_error.end(), lower_error.begin(),
+                       [](wchar_t character) { return static_cast<wchar_t>(std::towlower(character)); });
+        if (lower_error.find(L"insufficient_quota") != std::wstring::npos ||
+            lower_error.find(L"quota") != std::wstring::npos ||
+            lower_error.find(L"billing") != std::wstring::npos) {
+            return L"大模型服务返回 HTTP 429：账户额度或计费余额不足。请检查服务商账户余额、套餐和项目额度。" +
+                (api_error.empty() ? std::wstring{} : L"\n服务端信息：" + api_error);
+        }
+        return L"大模型服务返回 HTTP 429：请求频率或并发数超出服务商限制。请稍后重试，并检查服务商的限流规则。" +
+            (api_error.empty() ? std::wstring{} : L"\n服务端信息：" + api_error);
+    }
     if (!api_error.empty()) return api_error;
     return L"大模型服务返回 HTTP 状态码 " + std::to_wstring(status) + L"。";
 }
@@ -546,7 +572,7 @@ ScreenshotAiResult AnalyzeScreenshotImpl(const std::vector<std::uint8_t>& image_
     ScreenshotAiTask task, const ScreenshotAiConfig& config) {
     if (image_png.empty()) return {false, {}, L"截图数据为空，无法发送分析。"};
     if (config.api_key.empty())
-        return {false, {}, L"尚未配置大模型 API Key，请编辑设置文件中的 [ScreenshotAI] ApiKey。"};
+        return {false, {}, L"尚未配置大模型 API Key，请编辑程序目录中的 settings.ini，填写 [ScreenshotAI] ApiKey。"};
 
     const std::wstring base_url = config.base_url.empty() ? kDefaultBaseUrl : config.base_url;
     const std::wstring model = config.model.empty() ? kDefaultModel : config.model;

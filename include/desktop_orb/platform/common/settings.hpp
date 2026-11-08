@@ -24,15 +24,16 @@ struct Settings {
 
 class SettingsStore {
 public:
-    // 作用：确定 settings.ini 的存放路径。参数：无。返回：无。
+    // 作用：确定 exe 同级 settings.ini 的存放路径。
+    // 参数：无。返回：无；系统无法读取 exe 路径时退回当前工作目录。
     SettingsStore();
     // 作用：取得当前配置文件路径。参数：无。返回：存储对象持有的路径引用。
     [[nodiscard]] const std::filesystem::path& path() const { return path_; }
-    // 作用：读取快捷键和悬浮球位置。参数：无。
-    // 返回：解析后的设置；文件缺失或位置无效时使用默认值。
+    // 作用：读取快捷键、悬浮球位置和截图 AI 参数。参数：无。
+    // 返回：解析后的设置；文件或字段缺失、位置无效时使用默认值。
     [[nodiscard]] Settings Load() const;
-    // 作用：写入当前设置到 INI 文件。参数：settings 为待保存的设置。
-    // 返回：目录创建及各项写入均成功为 true，否则为 false。
+    // 作用：把全部应用设置写入 exe 同级的统一 INI 文件。
+    // 参数：settings 为待保存的快捷键、窗口位置和截图 AI 参数。返回：各项写入成功为 true，否则为 false。
     bool Save(const Settings& settings) const;
     // 作用：把用户快捷键文本解析为 Win32 修饰键和键码。
     // 参数：text 为如 Ctrl+Alt+Space 的组合。返回：有效时为 Hotkey，否则为空。

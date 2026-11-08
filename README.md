@@ -11,16 +11,23 @@ cmake -S . -B build -A x64
 cmake --build build --config Release
 ```
 
-Screenshot text extraction and summarization call an OpenAI-compatible vision model directly from C++. Set `[ScreenshotAI]` values in `%APPDATA%\DesktopOrb\settings.ini`; right-click the floating ball and choose **打开设置文件** to edit it:
+Screenshot text extraction and summarization call an OpenAI-compatible vision model directly from C++. All application settings are stored together in `settings.ini` beside the running executable. Right-click the floating ball and choose **打开设置文件** to edit it, then choose **重新加载设置** to apply changes:
 
 ```ini
+[Controls]
+Hotkey=Ctrl+Alt+Space
+
+[Orb]
+X=1200
+Y=300
+
 [ScreenshotAI]
 ApiKey=your-api-key
 BaseUrl=https://api.openai.com/v1
 Model=gpt-4o-mini
 ```
 
-`ApiKey` is stored as plain text in the current user's settings file. `BaseUrl` is the service root; the client appends `/chat/completions` automatically. Remote services must use HTTPS; HTTP is accepted for loopback development servers. The client uses Windows certificate validation and the system proxy settings.
+`ApiKey` is stored as plain text in this file. For a packaged build, `settings.ini` is created beside `desktop-orb.exe` on first launch; you can also place it there before launch. `BaseUrl` is the service root; the client appends `/chat/completions` automatically. Remote services must use HTTPS; HTTP is accepted for loopback development servers. The client uses Windows certificate validation and the system proxy settings. HTTP 429 errors now distinguish quota or billing exhaustion from request rate limits and display the provider's error message.
 
 Run `build\Release\desktop-orb.exe`. A floating ball appears at the edge of the primary display.
 The build copies `assets/icons/*.png` to `build\Release\assets\icons\`. Keep the `assets` directory beside the exe when distributing or moving it.
@@ -35,7 +42,7 @@ Only one instance runs across Windows login sessions. Launching the executable a
 - The default global shortcut is `Ctrl+Alt+Space`.
 - Right-click the ball to open or reload the settings file, or exit.
 
-Settings are stored at `%APPDATA%\DesktopOrb\settings.ini`. Change `Hotkey` to a combination such as `Ctrl+Shift+F8`, then choose **重新加载设置** from the ball's right-click menu. Supported main keys are A-Z, 0-9, Space and F1-F12.
+Change `Hotkey` in the same `settings.ini` to a combination such as `Ctrl+Shift+F8`, then choose **重新加载设置** from the ball's right-click menu. Supported main keys are A-Z, 0-9, Space and F1-F12.
 
 ## Source layout
 

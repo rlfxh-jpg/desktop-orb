@@ -120,6 +120,8 @@ App::~App() {
 bool App::Initialize() {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     settings_ = settings_store_.Load();
+    screenshot_ai_config_ = {settings_.screenshot_ai_api_key,
+        settings_.screenshot_ai_base_url, settings_.screenshot_ai_model};
     const auto primary = platform::MonitorAt({0, 0});
     const POINT initial = settings_.orb_position.value_or(POINT{
         primary.work.right - 58, primary.work.top + (primary.work.bottom - primary.work.top) / 3});
@@ -301,10 +303,7 @@ void App::StartScreenshotAnalysis(RECT selection, platform::ScreenshotAiTask tas
     screenshot_window_.SetAnalysisPending(true);
     try {
         // 核心逻辑：网络请求在后台执行；配置按值复制，避免后台线程读取 UI 线程正在更新的设置。
-        const platform::ScreenshotAiConfig config{
-            settings_.screenshot_ai_api_key,
-            settings_.screenshot_ai_base_url,
-            settings_.screenshot_ai_model};
+        const platform::ScreenshotAiConfig config = screenshot_ai_config_;
         screenshot_ai_future_ = std::async(std::launch::async,
             [image = std::move(image_png), task, config] {
                 return platform::AnalyzeScreenshot(image, task, config);
@@ -356,9 +355,6 @@ void App::CloseOverlays() {
 
 void App::ReloadSettings() {
     const auto next = settings_store_.Load();
-    settings_.screenshot_ai_api_key = next.screenshot_ai_api_key;
-    settings_.screenshot_ai_base_url = next.screenshot_ai_base_url;
-    settings_.screenshot_ai_model = next.screenshot_ai_model;
     const auto hotkey = platform::SettingsStore::ParseHotkey(next.hotkey);
     if (!hotkey) {
         Warn(orb_.handle(), L"快捷键无效", L"请使用 Ctrl、Alt、Shift 或 Win，加上字母、数字、Space 或 F1-F12。");
@@ -368,7 +364,10 @@ void App::ReloadSettings() {
     if (hotkey_registered_) UnregisterHotKey(orb_.handle(), kHotkeyId);
     hotkey_registered_ = false;
     if (RegisterShortcut(*hotkey)) {
-        settings_.hotkey = next.hotkey;
+        // 核心逻辑：整体更新已加载设置，避免后续保存悬浮球位置时覆盖刚编辑的 AI 参数。
+        settings_ = next;
+        screenshot_ai_config_ = {settings_.screenshot_ai_api_key,
+            settings_.screenshot_ai_base_url, settings_.screenshot_ai_model};
     } else {
         if (previous) RegisterShortcut(*previous);
         Warn(orb_.handle(), L"快捷键不可用", L"该组合可能已被其他程序占用，请修改后重试。");

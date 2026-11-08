@@ -20,6 +20,34 @@ std::wstring ReadValue(const std::filesystem::path& path, const wchar_t* section
     return buffer;
 }
 
+// 作用：判断指定 INI 项是否实际存在，用于安全迁移旧版分离的截图 AI 配置。
+// 参数：path 为 INI 路径；section 和 key 为配置项名称。返回：配置项存在时为 true。
+bool HasValue(const std::filesystem::path& path, const wchar_t* section, const wchar_t* key) {
+    constexpr wchar_t missing_value[] = L"__DESKTOP_ORB_SETTING_MISSING_9D7A2F__";
+    return ReadValue(path, section, key, missing_value) != missing_value;
+}
+
+// 作用：取得当前进程 exe 所在目录，令便携版的设置随发布目录一起移动。
+// 参数：无。返回：exe 所在目录；读取失败时返回当前工作目录或相对当前目录。
+std::filesystem::path ExecutableDirectory() {
+    std::wstring executable_path(512, L'\0');
+    for (;;) {
+        const DWORD length = GetModuleFileNameW(nullptr, executable_path.data(),
+                                                static_cast<DWORD>(executable_path.size()));
+        if (length == 0) break;
+        if (length < executable_path.size() - 1) {
+            executable_path.resize(length);
+            return std::filesystem::path(executable_path).parent_path();
+        }
+        if (executable_path.size() >= 32768) break;
+        executable_path.resize(std::min<std::size_t>(executable_path.size() * 2, 32768));
+    }
+
+    std::error_code error;
+    const auto directory = std::filesystem::current_path(error);
+    return error ? std::filesystem::path(L".") : directory;
+}
+
 // 作用：去除首尾空白并转为大写，以便快捷键名称不区分大小写。
 // 参数：value 为待规范化文本。返回：规范化文本；全空白时为空。
 std::wstring UpperTrim(std::wstring value) {
@@ -34,20 +62,20 @@ std::wstring UpperTrim(std::wstring value) {
 }  // 匿名命名空间结束
 
 SettingsStore::SettingsStore() {
-    wchar_t appdata[32768]{};
-    const DWORD length = GetEnvironmentVariableW(L"APPDATA", appdata, 32768);
-    path_ = length > 0 && length < 32768
-        ? std::filesystem::path(appdata) / L"DesktopOrb" / L"settings.ini"
-        : std::filesystem::current_path() / L"settings.ini";
+    path_ = ExecutableDirectory() / L"settings.ini";
 }
 
 Settings SettingsStore::Load() const {
     Settings settings;
     settings.hotkey = ReadValue(path_, L"Controls", L"Hotkey", L"Ctrl+Alt+Space");
-    settings.screenshot_ai_api_key = ReadValue(path_, L"ScreenshotAI", L"ApiKey", L"");
+    const auto legacy_ai_path = path_.parent_path() / L"screenshot_ai.ini";
+    const bool has_unified_ai_settings = HasValue(path_, L"ScreenshotAI", L"ApiKey") ||
+        HasValue(path_, L"ScreenshotAI", L"BaseUrl") || HasValue(path_, L"ScreenshotAI", L"Model");
+    const auto& ai_path = has_unified_ai_settings ? path_ : legacy_ai_path;
+    settings.screenshot_ai_api_key = ReadValue(ai_path, L"ScreenshotAI", L"ApiKey", L"");
     settings.screenshot_ai_base_url = ReadValue(
-        path_, L"ScreenshotAI", L"BaseUrl", L"https://api.openai.com/v1");
-    settings.screenshot_ai_model = ReadValue(path_, L"ScreenshotAI", L"Model", L"gpt-4o-mini");
+        ai_path, L"ScreenshotAI", L"BaseUrl", L"https://api.openai.com/v1");
+    settings.screenshot_ai_model = ReadValue(ai_path, L"ScreenshotAI", L"Model", L"gpt-4o-mini");
     const auto x = ReadValue(path_, L"Orb", L"X", L"");
     const auto y = ReadValue(path_, L"Orb", L"Y", L"");
     if (!x.empty() && !y.empty()) {

@@ -58,6 +58,7 @@ private:
 
     platform::SettingsStore settings_store_;
     platform::Settings settings_;
+    platform::ScreenshotAiConfig screenshot_ai_config_;
     platform::WindowCatalog catalog_;
     platform::ScreenshotService screenshot_service_;
     ui::OrbWindow orb_;
