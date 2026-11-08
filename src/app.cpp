@@ -45,7 +45,7 @@ bool App::Initialize() {
     const auto primary = platform::MonitorAt({0, 0});
     const POINT initial = settings_.orb_position.value_or(POINT{
         primary.work.right - 58, primary.work.top + (primary.work.bottom - primary.work.top) / 3});
-    if (!orb_.Create(initial) || !panel_.Create()) return false;
+    if (!orb_.Create(initial) || !panel_.Create() || !screenshot_window_.Create()) return false;
     orb_.SnapToEdge();
     if (!menu_.Add(L"窗口切换", L"window_switcher.png", [this] { OpenSwitcher(); })) return false;
     if (!menu_.Add(L"截图", L"screenshot.png", [this] { CaptureScreenshot(); })) return false;
@@ -53,6 +53,9 @@ bool App::Initialize() {
     excluded.push_back(orb_.handle());
     excluded.push_back(panel_.handle());
     panel_.SetExcluded(std::move(excluded));
+    screenshot_window_.on_action = [this](ui::ScreenshotAction action, RECT selection) {
+        HandleScreenshotAction(action, selection);
+    };
     panel_.on_closed = [this] {
         ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
     };
@@ -117,6 +120,7 @@ void App::Tick() {
 }
 
 void App::ToggleMenu() {
+    if (screenshot_window_.visible()) return;
     if (menu_.visible()) { menu_.Hide(); return; }
     panel_.Hide();
     const RECT bounds = orb_.Bounds();
@@ -136,17 +140,57 @@ void App::OpenSwitcher() {
 }
 
 void App::CaptureScreenshot() {
+    menu_.Hide();
+    panel_.Hide();
     ShowWindow(orb_.handle(), SW_HIDE);
     // 核心逻辑：等待 DWM 完成悬浮球隐藏，避免将自身界面残影写入截图。
     Sleep(100);
-    const auto result = screenshot_service_.CaptureAllDisplays();
-    ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
-    if (!result.saved) {
-        Warn(orb_.handle(), L"截图失败", result.error.c_str());
+    std::wstring error;
+    if (!screenshot_service_.CaptureAllDisplays(error)) {
+        ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
+        Warn(orb_.handle(), L"截图失败", error.c_str());
         return;
     }
-    if (!result.copied_to_clipboard) {
-        Warn(orb_.handle(), L"截图已保存", L"截图已保存，但复制到剪贴板失败。文件位置：图片\\DesktopOrb");
+    if (!screenshot_window_.ShowFor(screenshot_service_)) {
+        screenshot_service_.Reset();
+        ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
+        Warn(orb_.handle(), L"截图失败", L"无法打开截图选区界面。");
+    }
+}
+
+void App::HandleScreenshotAction(ui::ScreenshotAction action, RECT selection) {
+    switch (action) {
+        case ui::ScreenshotAction::recapture:
+            screenshot_window_.Hide();
+            CaptureScreenshot();
+            return;
+        case ui::ScreenshotAction::close:
+            screenshot_window_.Hide();
+            screenshot_service_.Reset();
+            ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
+            return;
+        case ui::ScreenshotAction::copy: {
+            const auto result = screenshot_service_.CopySelection(selection);
+            if (!result.copied_to_clipboard) {
+                Warn(screenshot_window_.handle(), L"复制失败", result.error.c_str());
+                return;
+            }
+            screenshot_window_.Hide();
+            screenshot_service_.Reset();
+            ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
+            return;
+        }
+        case ui::ScreenshotAction::save: {
+            const auto result = screenshot_service_.SaveSelection(selection);
+            if (!result.saved) {
+                Warn(screenshot_window_.handle(), L"保存失败", result.error.c_str());
+                return;
+            }
+            screenshot_window_.Hide();
+            screenshot_service_.Reset();
+            ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
+            return;
+        }
     }
 }
 

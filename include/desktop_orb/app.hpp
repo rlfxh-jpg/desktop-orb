@@ -7,6 +7,7 @@
 #include "desktop_orb/platform/window_switcher/window_catalog.hpp"
 #include "desktop_orb/ui/common/feature_menu.hpp"
 #include "desktop_orb/ui/common/orb_window.hpp"
+#include "desktop_orb/ui/screenshot/selection_window.hpp"
 #include "desktop_orb/ui/window_switcher/switcher_panel.hpp"
 
 namespace desktop_orb {
@@ -30,9 +31,12 @@ private:
     void ToggleMenu();
     // 作用：在悬浮球所在显示器的同侧打开窗口切换面板。参数：无。返回：无。
     void OpenSwitcher();
-    // 作用：暂时隐藏悬浮球，截取整个虚拟桌面并保存、复制到剪贴板。
-    // 参数：无。返回：无；失败时恢复悬浮球并显示错误信息。
+    // 作用：暂时隐藏悬浮球，捕获虚拟桌面并打开截图选区界面。
+    // 参数：无。返回：无；采集或界面创建失败时恢复悬浮球并显示错误信息。
     void CaptureScreenshot();
+    // 作用：处理选区窗口提交的复制、保存、重新截取或关闭操作。
+    // 参数：action 为用户操作；selection 为屏幕坐标选区。返回：无。
+    void HandleScreenshotAction(ui::ScreenshotAction action, RECT selection);
     // 作用：关闭菜单和预览面板并恢复悬浮球。参数：无。返回：无。
     void CloseOverlays();
     // 作用：显示设置与退出命令的右键菜单。参数：无。返回：无。
@@ -52,6 +56,7 @@ private:
     ui::OrbWindow orb_;
     ui::FeatureMenu menu_;
     ui::SwitcherPanel panel_;
+    ui::SelectionWindow screenshot_window_;
     bool hotkey_registered_ = false;
     bool previous_left_down_ = false;
     bool previous_escape_down_ = false;

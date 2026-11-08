@@ -21,12 +21,13 @@ add_executable(desktop-orb WIN32
     src/ui/common/feature_layout.cpp
     src/ui/common/feature_menu.cpp
     src/ui/window_switcher/switcher_panel.cpp
+    src/ui/screenshot/selection_window.cpp
 )
 
 target_include_directories(desktop-orb PRIVATE include)
 target_compile_features(desktop-orb PRIVATE cxx_std_20)
 target_compile_definitions(desktop-orb PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN WINVER=0x0A00 _WIN32_WINNT=0x0A00)
-target_link_libraries(desktop-orb PRIVATE dwmapi gdi32 user32 shell32 gdiplus comctl32 ole32)
+target_link_libraries(desktop-orb PRIVATE dwmapi gdi32 user32 shell32 gdiplus comctl32 ole32 msimg32)
 
 # 核心逻辑：收集所有 PNG 并在每次构建时复制，新增图片无需修改此文件。
 file(GLOB ICON_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/*.png")

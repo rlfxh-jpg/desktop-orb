@@ -19,7 +19,7 @@ Only one instance runs across Windows login sessions. Launching the executable a
 
 - Click the ball to show its feature menu; drag it to another edge or monitor. Feature icons form a compact arc that expands as more features are added.
 - Click the window switcher icon to open the live window list on the same edge as the ball. Its small transparent button grows while hovered; after 3 seconds, its name appears. The ball hides while the list is open and returns when it closes.
-- Click the screenshot icon to capture all displays. The image is copied to the clipboard and saved as a PNG under `%USERPROFILE%\Pictures\DesktopOrb`.
+- Click the screenshot icon, then drag across the frozen desktop to select an area. The live selection size is shown in pixels. Choose **复制**, **保存**, **重新截取**, or **关闭** from the toolbar. `Esc` closes the selection; `Enter` copies it. Saved PNG files go under `%USERPROFILE%\Pictures\DesktopOrb`.
 - Scroll the list, then click a window to activate it. `Esc` closes the menu or list.
 - The default global shortcut is `Ctrl+Alt+Space`.
 - Right-click the ball to open or reload the settings file, or exit.
@@ -32,6 +32,7 @@ Settings are stored at `%APPDATA%\DesktopOrb\settings.ini`. Change `Hotkey` to a
 - `platform/common`: shared monitor, settings, asset path and single-instance support.
 - `platform/window_switcher`: window discovery, activation and DWM thumbnails.
 - `platform/screenshot`: virtual desktop capture, PNG output and clipboard integration.
+- `ui/screenshot`: full virtual desktop selection overlay, size feedback and post-capture actions.
 - `ui/common`: floating orb, shared window lifecycle, drawing, icon loading and feature menu.
 - `ui/window_switcher`: the window switcher panel and its interactions.
 - `assets/icons`: runtime PNG images. Add a lowercase, underscore-separated PNG here and build.

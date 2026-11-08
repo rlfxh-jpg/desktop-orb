@@ -1,14 +1,15 @@
 #pragma once
 
-// 文件职责：声明 Windows 桌面截图服务及其执行结果。
-// 本模块负责捕获虚拟桌面、保存 PNG 和发布剪贴板位图，不负责界面提示或悬浮球状态。
+// 文件职责：声明虚拟桌面截图快照的采集、裁剪保存和剪贴板发布接口。
+// 模块由 platform/screenshot 实现；服务独占快照 HBITMAP，并在替换或析构时释放。
 #include <filesystem>
 #include <string>
+#include <windows.h>
 
 namespace desktop_orb::platform {
 
-// 作用：承载截图操作的文件保存状态、剪贴板状态和失败原因。
-// 参数：无。返回：无；saved 为 false 时 error 描述主要失败原因。
+// 作用：承载截图输出的保存路径和失败信息。
+// 参数：无。返回：无；saved 或 copied_to_clipboard 分别表示对应操作是否成功。
 struct ScreenshotResult {
     bool saved = false;
     bool copied_to_clipboard = false;
@@ -16,13 +17,46 @@ struct ScreenshotResult {
     std::wstring error;
 };
 
-// 作用：提供虚拟桌面截图、PNG 保存与剪贴板复制能力。
-// 参数：无。返回：无；对象不持有跨调用的系统资源。
+// 作用：持有一次虚拟桌面快照，并对用户框选范围执行 PNG 保存或剪贴板复制。
+// 参数：无。返回：无；快照所有权由对象独占管理。
 class ScreenshotService final {
 public:
-    // 作用：捕获所有显示器拼接成的虚拟桌面，并保存到用户图片目录。
-    // 参数：无。返回：保存状态、剪贴板状态及 PNG 文件路径；采集或保存失败时包含错误原因。
-    [[nodiscard]] ScreenshotResult CaptureAllDisplays() const;
+    // 作用：释放仍由本服务持有的桌面快照。参数：无。返回：无。
+    ~ScreenshotService();
+    // 作用：禁止复制快照所有权。参数：other 为源对象。返回：无；接口已删除。
+    ScreenshotService(const ScreenshotService&) = delete;
+    // 作用：禁止复制赋值。参数：other 为源对象。返回：无；接口已删除。
+    ScreenshotService& operator=(const ScreenshotService&) = delete;
+    // 作用：创建尚未持有快照的服务。参数：无。返回：无。
+    ScreenshotService() = default;
+
+    // 作用：捕获所有显示器拼接成的虚拟桌面，并替换旧快照。
+    // 参数：无。返回：成功为 true；系统无法读取桌面或分配图像资源时为 false。
+    [[nodiscard]] bool CaptureAllDisplays(std::wstring& error);
+    // 作用：查询快照覆盖的虚拟桌面屏幕坐标范围。
+    // 参数：无。返回：屏幕坐标矩形；没有有效快照时为空矩形。
+    [[nodiscard]] RECT bounds() const { return bounds_; }
+    // 作用：查询是否持有有效桌面快照。参数：无。返回：有效为 true。
+    [[nodiscard]] bool ready() const { return bitmap_ != nullptr; }
+    // 作用：取得绘制选区背景所需的借用位图句柄。
+    // 参数：无。返回：服务持有的 HBITMAP；调用方不得释放或修改。
+    [[nodiscard]] HBITMAP bitmap() const { return bitmap_; }
+    // 作用：把虚拟桌面选区裁剪后保存为 PNG。
+    // 参数：selection 为屏幕坐标选区。返回：保存状态、输出路径及失败原因。
+    [[nodiscard]] ScreenshotResult SaveSelection(RECT selection) const;
+    // 作用：把虚拟桌面选区裁剪后复制到 Windows 剪贴板。
+    // 参数：selection 为屏幕坐标选区。返回：复制成功状态及失败原因。
+    [[nodiscard]] ScreenshotResult CopySelection(RECT selection) const;
+    // 作用：销毁当前快照并清空坐标范围。参数：无。返回：无。
+    void Reset();
+
+private:
+    // 作用：校验并裁剪屏幕坐标选区到快照范围。
+    // 参数：selection 为屏幕坐标选区；cropped 为接收裁剪后坐标的输出引用。
+    // 返回：交集宽高均大于零且快照有效时为 true。
+    [[nodiscard]] bool NormalizeSelection(RECT selection, RECT& cropped) const;
+    HBITMAP bitmap_ = nullptr;
+    RECT bounds_{};
 };
 
 }  // desktop_orb::platform 命名空间结束
