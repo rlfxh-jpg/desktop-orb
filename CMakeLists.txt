@@ -12,6 +12,7 @@ add_executable(desktop-orb WIN32
     src/platform/common/settings.cpp
     src/platform/desktop_fence/desktop_item_catalog.cpp
     src/platform/desktop_fence/desktop_icon_visibility.cpp
+    src/platform/desktop_fence/desktop_window_layer.cpp
     src/platform/desktop_fence/desktop_wallpaper.cpp
     src/platform/window_switcher/window_catalog.cpp
     src/platform/window_switcher/thumbnail_manager.cpp

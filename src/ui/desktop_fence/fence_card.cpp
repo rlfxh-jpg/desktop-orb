@@ -4,6 +4,7 @@
 
 #include "desktop_orb/platform/common/monitor.hpp"
 #include "desktop_orb/platform/desktop_fence/desktop_wallpaper.hpp"
+#include "desktop_orb/platform/desktop_fence/desktop_window_layer.hpp"
 #include "desktop_orb/ui/common/window_base.hpp"
 #include "fence_card_renderer.hpp"
 #include <algorithm>
@@ -40,7 +41,7 @@ public:
     bool Create(platform::DesktopFenceCategory category) {
         category_ = category;
         if (!CreateNative(L"DesktopOrbFenceCard", L"桌面围栏", WS_POPUP,
-                WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+                WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
                 0, 0, kCardWidth, kCardHeight)) return false;
         // 核心逻辑：围栏关闭 DWM 系统材质，使用壁纸像素作为底图；窗口本身保持不透明，
         // 防止编辑器或其他前景窗口的文字透过玻璃面板。
@@ -54,8 +55,9 @@ public:
         if (!handle() || bounds.right <= bounds.left || bounds.bottom <= bounds.top) return false;
         const int width = bounds.right - bounds.left;
         const int height = bounds.bottom - bounds.top;
-        if (!SetWindowPos(handle(), HWND_TOPMOST, bounds.left, bounds.top, width, height,
-                          SWP_NOACTIVATE | SWP_SHOWWINDOW)) return false;
+        if (!platform::PlaceBehindApplications(handle())) return false;
+        if (!SetWindowPos(handle(), nullptr, bounds.left, bounds.top, width, height,
+                          SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOZORDER)) return false;
         // 核心逻辑：成功设置后区域句柄由系统接管；失败时必须由当前对象释放。
         HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1,
             platform::Scale(22, GetDpiForWindow(handle())),
@@ -144,7 +146,6 @@ protected:
                     return 0;
                 }
                 selected_item_ = HitItem(point);
-                SetFocus(handle());
                 InvalidateRect(handle(), nullptr, FALSE);
                 return 0;
             }
@@ -254,9 +255,7 @@ private:
         const size_t row_start = row * static_cast<size_t>(ColumnCount());
         if (row_start >= items_.size()) return std::nullopt;
         const size_t row_count = std::min(static_cast<size_t>(ColumnCount()), items_.size() - row_start);
-        const int available = static_cast<int>(client.right) - padding * 2 - platform::Scale(12, dpi);
-        const int row_left = padding + std::max(0,
-            (available - static_cast<int>(row_count) * cell_width) / 2);
+        const int row_left = padding;
         if (point.x < row_left) return std::nullopt;
         const size_t column = static_cast<size_t>((point.x - row_left) / cell_width);
         if (column >= row_count) return std::nullopt;

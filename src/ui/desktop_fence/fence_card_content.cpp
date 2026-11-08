@@ -88,9 +88,7 @@ void DrawFenceContents(HDC dc, RECT client, UINT dpi,
             const size_t row_start = static_cast<size_t>(scroll_row + row) * columns;
             if (row_start >= items.size()) break;
             const size_t row_count = std::min(static_cast<size_t>(columns), items.size() - row_start);
-            const int usable = client.right - padding * 2 - platform::Scale(12, dpi);
-            const int row_left = padding + std::max(0,
-                (usable - static_cast<int>(row_count) * cell_width) / 2);
+            const int row_left = padding;
             for (size_t column = 0; column < row_count; ++column) {
                 const size_t index = row_start + column;
                 const int left = row_left + static_cast<int>(column) * cell_width;

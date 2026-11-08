@@ -79,7 +79,6 @@ void FencePanel::ShowFor(const platform::Monitor& monitor, bool align_right) {
     // 围栏关闭或对象销毁时恢复，避免覆盖用户此前手动隐藏桌面图标的设置。
     desktop_icon_visibility_.Hide();
     visible_ = true;
-    if (cards_[0]) SetForegroundWindow(cards_[0]->handle());
 }
 
 // 作用：隐藏卡片并通知应用层恢复悬浮球。

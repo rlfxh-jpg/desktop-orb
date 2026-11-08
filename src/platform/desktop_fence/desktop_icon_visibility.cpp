@@ -5,13 +5,15 @@
 namespace desktop_orb::platform {
 namespace {
 
-// 作用：从 Explorer 顶层窗口中收集桌面图标视图。
+// 作用：从 Explorer 顶层窗口中收集桌面图标列表控件。
 // 参数：window 为当前枚举到的顶层窗口；context 为接收句柄的 vector 指针。
 // 返回：继续枚举时为 TRUE；异常情况不终止 EnumWindows。
 BOOL CALLBACK CollectDesktopViews(HWND window, LPARAM context) {
     auto* views = reinterpret_cast<std::vector<HWND>*>(context);
-    HWND view = FindWindowExW(window, nullptr, L"SHELLDLL_DefView", nullptr);
-    if (view) views->push_back(view);
+    HWND desktop_view = FindWindowExW(window, nullptr, L"SHELLDLL_DefView", nullptr);
+    HWND icon_list = desktop_view
+        ? FindWindowExW(desktop_view, nullptr, L"SysListView32", nullptr) : nullptr;
+    if (icon_list) views->push_back(icon_list);
     return TRUE;
 }
 
