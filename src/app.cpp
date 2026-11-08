@@ -134,7 +134,7 @@ bool App::Initialize() {
     auto excluded = menu_.Handles();
     excluded.push_back(orb_.handle());
     excluded.push_back(panel_.handle());
-    excluded.push_back(fence_panel_.handle());
+    for (HWND handle : fence_panel_.Handles()) excluded.push_back(handle);
     panel_.SetExcluded(std::move(excluded));
     screenshot_window_.on_action = [this](ui::ScreenshotAction action, RECT selection) {
         HandleScreenshotAction(action, selection);
@@ -145,7 +145,6 @@ bool App::Initialize() {
     fence_panel_.on_closed = [this] {
         ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
     };
-
     orb_.on_click = [this] { ToggleMenu(); };
     orb_.on_drag_start = [this] { CloseOverlays(); };
     orb_.on_moved = [this](POINT position) { SavePosition(position); };
@@ -192,10 +191,9 @@ void App::Tick() {
 
     const bool left_down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
     if (left_down && !previous_left_down_ &&
-        (menu_.visible() || panel_.visible() || fence_panel_.visible())) {
+        (menu_.visible() || panel_.visible())) {
         bool inside = Contains(orb_bounds, cursor);
         if (panel_.visible()) inside = inside || Contains(Bounds(panel_.handle()), cursor);
-        if (fence_panel_.visible()) inside = inside || Contains(Bounds(fence_panel_.handle()), cursor);
         if (menu_.visible()) {
             for (HWND button : menu_.Handles()) inside = inside || Contains(Bounds(button), cursor);
         }
@@ -211,9 +209,12 @@ void App::Tick() {
 
 void App::ToggleMenu() {
     if (screenshot_window_.visible()) return;
+    if (fence_panel_.visible()) {
+        fence_panel_.Hide();
+        return;
+    }
     if (menu_.visible()) { menu_.Hide(); return; }
     panel_.Hide();
-    fence_panel_.Hide();
     const RECT bounds = orb_.Bounds();
     const POINT center{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
     menu_.ShowAround(bounds, platform::MonitorAt(center), GetDpiForWindow(orb_.handle()));
@@ -234,12 +235,21 @@ void App::OpenSwitcher() {
 void App::OpenDesktopFence() {
     menu_.Hide();
     panel_.Hide();
+    if (fence_panel_.visible()) {
+        fence_panel_.Hide();
+        return;
+    }
     const RECT bounds = orb_.Bounds();
     const POINT center{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
     const auto monitor = platform::MonitorAt(center);
     const bool align_right = center.x >= (monitor.work.left + monitor.work.right) / 2;
     fence_panel_.ShowFor(monitor, align_right);
-    if (fence_panel_.visible()) ShowWindow(orb_.handle(), SW_HIDE);
+    if (fence_panel_.visible()) {
+        // 核心逻辑：围栏卡片失焦后仍保留；悬浮球保持可见并位于卡片上方，作为显式关闭入口。
+        SetWindowPos(orb_.handle(), HWND_TOPMOST, bounds.left, bounds.top,
+            bounds.right - bounds.left, bounds.bottom - bounds.top,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    }
 }
 
 void App::CaptureScreenshot() {
