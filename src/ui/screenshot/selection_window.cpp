@@ -5,6 +5,7 @@
 #include "desktop_orb/ui/common/drawing.hpp"
 #include "desktop_orb/platform/common/monitor.hpp"
 #include <algorithm>
+#include <cstdlib>
 #include <string>
 #include <windowsx.h>
 
@@ -17,6 +18,7 @@ constexpr int kToolbarGap = 5;
 constexpr int kToolbarPadding = 6;
 constexpr int kToolbarWidth = kToolbarPadding * 2 + kToolbarButtonWidth * 4 + kToolbarGap * 3;
 constexpr int kSelectionBorderWidth = 3;
+constexpr int kResizeHitTolerance = 8;
 constexpr COLORREF kSelectionBorderColor = RGB(24, 132, 255);
 
 // 作用：把屏幕坐标矩形转换为以虚拟桌面原点为基准的客户区坐标。
@@ -67,10 +69,11 @@ bool SelectionWindow::ShowFor(platform::ScreenshotService& snapshot) {
         snapshot_ = nullptr;
         return false;
     }
-    dragging_ = false;
+    drag_mode_ = DragMode::none;
+    toolbar_pressed_ = false;
     selected_ = false;
     visible_ = true;
-    SetCursor(LoadCursorW(nullptr, IDC_CROSS));
+    SetCursor(LoadCursorW(nullptr, IDC_ARROW));
     // 核心逻辑：先在隐藏状态完成首帧合成并提交分层表面，避免系统先展示未绘制的全屏窗口。
     DrawFrame(frame_dc_);
     if (!PresentFrame()) {
@@ -143,7 +146,8 @@ bool SelectionWindow::PresentFrame() {
 void SelectionWindow::Hide() {
     if (!visible_) return;
     visible_ = false;
-    dragging_ = false;
+    drag_mode_ = DragMode::none;
+    toolbar_pressed_ = false;
     selected_ = false;
     snapshot_ = nullptr;
     ShowWindow(handle(), SW_HIDE);
@@ -164,8 +168,117 @@ POINT SelectionWindow::ScreenPoint(POINT point) const {
 }
 
 RECT SelectionWindow::Selection() const {
-    return {std::min(anchor_.x, cursor_.x), std::min(anchor_.y, cursor_.y),
-            std::max(anchor_.x, cursor_.x), std::max(anchor_.y, cursor_.y)};
+    return selection_;
+}
+
+unsigned int SelectionWindow::HitResizeEdges(POINT screen_point) const {
+    if (!selected_) return 0;
+    const int tolerance = platform::Scale(kResizeHitTolerance, GetDpiForWindow(handle()));
+    const int horizontal_padding = tolerance * 2;
+    const int vertical_padding = tolerance * 2;
+    unsigned int edges = 0;
+
+    if (screen_point.y >= selection_.top - vertical_padding &&
+        screen_point.y <= selection_.bottom + vertical_padding) {
+        const int left_distance = std::abs(static_cast<int>(screen_point.x - selection_.left));
+        const int right_distance = std::abs(static_cast<int>(screen_point.x - selection_.right));
+        if (left_distance <= tolerance && left_distance <= right_distance) edges |= resize_left;
+        else if (right_distance <= tolerance) edges |= resize_right;
+    }
+    if (screen_point.x >= selection_.left - horizontal_padding &&
+        screen_point.x <= selection_.right + horizontal_padding) {
+        const int top_distance = std::abs(static_cast<int>(screen_point.y - selection_.top));
+        const int bottom_distance = std::abs(static_cast<int>(screen_point.y - selection_.bottom));
+        if (top_distance <= tolerance && top_distance <= bottom_distance) edges |= resize_top;
+        else if (bottom_distance <= tolerance) edges |= resize_bottom;
+    }
+    return edges;
+}
+
+void SelectionWindow::UpdateCursor(POINT client_point) const {
+    if (!snapshot_) {
+        SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+        return;
+    }
+
+    const RECT desktop = snapshot_->bounds();
+    const RECT toolbar = ToClient(ToolbarBounds(), {desktop.left, desktop.top});
+    if (drag_mode_ == DragMode::none && selected_ && PtInRect(&toolbar, client_point)) {
+        SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+        return;
+    }
+    if (drag_mode_ == DragMode::create) {
+        SetCursor(LoadCursorW(nullptr, IDC_SIZENWSE));
+        return;
+    }
+    if (drag_mode_ == DragMode::move) {
+        SetCursor(LoadCursorW(nullptr, IDC_SIZEALL));
+        return;
+    }
+
+    const POINT screen_point = ScreenPoint(client_point);
+    const unsigned int edges = drag_mode_ == DragMode::resize
+        ? resize_edges_ : HitResizeEdges(screen_point);
+    if (edges != 0) {
+        const bool horizontal = (edges & (resize_left | resize_right)) != 0;
+        const bool vertical = (edges & (resize_top | resize_bottom)) != 0;
+        const bool diagonal_nw_se = ((edges & resize_left) && (edges & resize_top)) ||
+                                    ((edges & resize_right) && (edges & resize_bottom));
+        const wchar_t* cursor_id = horizontal && vertical
+            ? (diagonal_nw_se ? IDC_SIZENWSE : IDC_SIZENESW)
+            : (horizontal ? IDC_SIZEWE : IDC_SIZENS);
+        SetCursor(LoadCursorW(nullptr, cursor_id));
+        return;
+    }
+
+    if (selected_ && PtInRect(&selection_, screen_point)) {
+        SetCursor(LoadCursorW(nullptr, IDC_SIZEALL));
+    } else {
+        SetCursor(LoadCursorW(nullptr, IDC_CROSS));
+    }
+}
+
+void SelectionWindow::UpdateDrag(POINT client_point) {
+    const POINT current = ScreenPoint(client_point);
+    const RECT desktop = snapshot_->bounds();
+    if (drag_mode_ == DragMode::create) {
+        selection_ = {std::min(drag_start_point_.x, current.x),
+                      std::min(drag_start_point_.y, current.y),
+                      std::max(drag_start_point_.x, current.x),
+                      std::max(drag_start_point_.y, current.y)};
+    } else if (drag_mode_ == DragMode::move) {
+        const int width = drag_start_selection_.right - drag_start_selection_.left;
+        const int height = drag_start_selection_.bottom - drag_start_selection_.top;
+        const int max_left = std::max(static_cast<int>(desktop.left),
+                                      static_cast<int>(desktop.right) - width);
+        const int max_top = std::max(static_cast<int>(desktop.top),
+                                     static_cast<int>(desktop.bottom) - height);
+        const int left = std::clamp<int>(
+            static_cast<int>(drag_start_selection_.left + current.x - drag_start_point_.x),
+            static_cast<int>(desktop.left), max_left);
+        const int top = std::clamp<int>(
+            static_cast<int>(drag_start_selection_.top + current.y - drag_start_point_.y),
+            static_cast<int>(desktop.top), max_top);
+        selection_ = {left, top, left + width, top + height};
+    } else if (drag_mode_ == DragMode::resize) {
+        selection_ = drag_start_selection_;
+        if (resize_edges_ & resize_left) {
+            selection_.left = std::clamp<LONG>(current.x, desktop.left,
+                                               selection_.right - 2);
+        }
+        if (resize_edges_ & resize_right) {
+            selection_.right = std::clamp<LONG>(current.x, selection_.left + 2,
+                                                desktop.right);
+        }
+        if (resize_edges_ & resize_top) {
+            selection_.top = std::clamp<LONG>(current.y, desktop.top,
+                                              selection_.bottom - 2);
+        }
+        if (resize_edges_ & resize_bottom) {
+            selection_.bottom = std::clamp<LONG>(current.y, selection_.top + 2,
+                                                 desktop.bottom);
+        }
+    }
 }
 
 RECT SelectionWindow::ToolbarBounds() const {
@@ -253,7 +366,7 @@ void SelectionWindow::DrawFrame(HDC dc) {
     HGDIOBJ old_bitmap = source && snapshot_ && snapshot_->ready()
         ? SelectObject(source, snapshot_->bitmap()) : nullptr;
     if (old_bitmap && old_bitmap != HGDI_ERROR) {
-        if (dragging_ || selected_) {
+        if (drag_mode_ != DragMode::none || selected_) {
             const RECT rect = ToClient(Selection(), origin);
             // 核心逻辑：拖动期间也还原框内原始画面，使淡灰遮罩只作用于选区之外。
             BitBlt(dc, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
@@ -264,7 +377,7 @@ void SelectionWindow::DrawFrame(HDC dc) {
     if (source) DeleteDC(source);
 
     const RECT selection = ToClient(Selection(), origin);
-    if (dragging_ || selected_) {
+    if (drag_mode_ != DragMode::none || selected_) {
         SetBkMode(dc, TRANSPARENT);
         DrawSelectionBorder(dc, selection);
         const std::wstring size = std::to_wstring(selection.right - selection.left) + L" × " +
@@ -313,43 +426,87 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
         case WM_PAINT: Paint(); return 0;
         case WM_ERASEBKGND: return 1;
         case WM_SETCURSOR:
-            SetCursor(LoadCursorW(nullptr, IDC_CROSS));
+            if (LOWORD(lparam) == HTCLIENT) {
+                POINT point{};
+                GetCursorPos(&point);
+                ScreenToClient(handle(), &point);
+                UpdateCursor(point);
+            } else {
+                SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+            }
             return TRUE;
         case WM_LBUTTONDOWN:
-            if (!selected_) {
-                anchor_ = cursor_ = ScreenPoint({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
-                dragging_ = true;
+        {
+            const POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+            const POINT screen_point = ScreenPoint(point);
+            const RECT desktop = snapshot_ ? snapshot_->bounds() : RECT{};
+            const RECT toolbar = ToClient(ToolbarBounds(), {desktop.left, desktop.top});
+            if (selected_ && PtInRect(&toolbar, point)) {
+                toolbar_pressed_ = true;
                 SetCapture(handle());
-                InvalidateRect(handle(), nullptr, FALSE);
+                return 0;
             }
+
+            drag_start_point_ = screen_point;
+            if (selected_) {
+                resize_edges_ = HitResizeEdges(screen_point);
+                if (resize_edges_ != 0) {
+                    drag_mode_ = DragMode::resize;
+                    drag_start_selection_ = selection_;
+                } else if (PtInRect(&selection_, screen_point)) {
+                    drag_mode_ = DragMode::move;
+                    drag_start_selection_ = selection_;
+                } else {
+                    selected_ = false;
+                    resize_edges_ = 0;
+                    drag_mode_ = DragMode::create;
+                    selection_ = {screen_point.x, screen_point.y, screen_point.x, screen_point.y};
+                }
+            } else {
+                drag_mode_ = DragMode::create;
+                selection_ = {screen_point.x, screen_point.y, screen_point.x, screen_point.y};
+            }
+            SetCapture(handle());
+            UpdateCursor(point);
+            InvalidateRect(handle(), nullptr, FALSE);
             return 0;
+        }
         case WM_MOUSEMOVE:
-            if (dragging_) {
-                cursor_ = ScreenPoint({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+            if (drag_mode_ != DragMode::none) {
+                UpdateDrag({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
                 InvalidateRect(handle(), nullptr, FALSE);
             }
+            UpdateCursor({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
             return 0;
         case WM_LBUTTONUP:
-            if (dragging_) {
-                cursor_ = ScreenPoint({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
-                dragging_ = false;
+            if (toolbar_pressed_) {
+                toolbar_pressed_ = false;
                 ReleaseCapture();
-                const RECT rect = Selection();
-                selected_ = rect.right - rect.left >= 2 && rect.bottom - rect.top >= 2;
-                InvalidateRect(handle(), nullptr, FALSE);
-            } else if (selected_) {
+                const RECT desktop = snapshot_ ? snapshot_->bounds() : RECT{};
+                const RECT toolbar = ToClient(ToolbarBounds(), {desktop.left, desktop.top});
                 const POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-                const RECT desktop = snapshot_->bounds();
-                const RECT bar = ToClient(ToolbarBounds(), {desktop.left, desktop.top});
-                if (PtInRect(&bar, point)) Dispatch(HitAction(point));
-                else {
-                    const POINT origin{snapshot_->bounds().left, snapshot_->bounds().top};
-                    const RECT selected_area = ToClient(Selection(), origin);
-                    if (PtInRect(&selected_area, point)) return 0;
-                    selected_ = false;
-                    InvalidateRect(handle(), nullptr, FALSE);
-                }
+                if (PtInRect(&toolbar, point)) Dispatch(HitAction(point));
+                return 0;
             }
+            if (drag_mode_ != DragMode::none) {
+                UpdateDrag({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+                const DragMode completed_mode = drag_mode_;
+                drag_mode_ = DragMode::none;
+                resize_edges_ = 0;
+                ReleaseCapture();
+                if (completed_mode == DragMode::create) {
+                    selected_ = selection_.right - selection_.left >= 2 &&
+                                selection_.bottom - selection_.top >= 2;
+                }
+                UpdateCursor({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+                InvalidateRect(handle(), nullptr, FALSE);
+            }
+            return 0;
+        case WM_CAPTURECHANGED:
+            drag_mode_ = DragMode::none;
+            toolbar_pressed_ = false;
+            resize_edges_ = 0;
+            InvalidateRect(handle(), nullptr, FALSE);
             return 0;
         case WM_KEYDOWN:
             if (wparam == VK_ESCAPE) Dispatch(ScreenshotAction::close);

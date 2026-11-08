@@ -38,11 +38,32 @@ protected:
     LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) override;
 
 private:
+    // 作用：记录鼠标当前操作选区的方式。参数：无。返回：无。
+    enum class DragMode { none, create, move, resize };
+
+    // 作用：标记本次拉伸需要随鼠标移动的选区边缘。
+    // 参数：无。返回：无；多个边缘可按位组合以支持角点拉伸。
+    enum ResizeEdge : unsigned int {
+        resize_left = 1U,
+        resize_top = 2U,
+        resize_right = 4U,
+        resize_bottom = 8U,
+    };
+
     // 作用：把客户区点转换成虚拟桌面屏幕坐标。参数：point 为客户区坐标。
     // 返回：对应的屏幕坐标点。
     [[nodiscard]] POINT ScreenPoint(POINT point) const;
-    // 作用：把鼠标拖动起止点规范化为屏幕坐标矩形。参数：无。返回：当前选区。
+    // 作用：取得当前选区的屏幕坐标矩形。参数：无。返回：当前选区。
     [[nodiscard]] RECT Selection() const;
+    // 作用：判断屏幕坐标点命中的选区拉伸边缘。
+    // 参数：screen_point 为虚拟桌面屏幕坐标。返回：命中边缘的按位组合；未命中为 0。
+    [[nodiscard]] unsigned int HitResizeEdges(POINT screen_point) const;
+    // 作用：按当前操作模式和鼠标所在位置设置系统光标。
+    // 参数：client_point 为选区窗口客户区坐标。返回：无。
+    void UpdateCursor(POINT client_point) const;
+    // 作用：根据鼠标当前位置更新创建、移动或拉伸中的选区。
+    // 参数：client_point 为选区窗口客户区坐标。返回：无；更新后的矩形限制在虚拟桌面内。
+    void UpdateDrag(POINT client_point);
     // 作用：重新绘制冻结桌面、遮罩、选区和操作栏。参数：无。返回：无。
     void Paint();
     // 作用：确保指定尺寸的 32 位后台绘图表面存在。
@@ -69,9 +90,12 @@ private:
     HGDIOBJ previous_frame_bitmap_ = nullptr;
     int frame_width_ = 0;
     int frame_height_ = 0;
-    POINT anchor_{};
-    POINT cursor_{};
-    bool dragging_ = false;
+    RECT selection_{};
+    RECT drag_start_selection_{};
+    POINT drag_start_point_{};
+    DragMode drag_mode_ = DragMode::none;
+    unsigned int resize_edges_ = 0;
+    bool toolbar_pressed_ = false;
     bool selected_ = false;
     bool visible_ = false;
 };
