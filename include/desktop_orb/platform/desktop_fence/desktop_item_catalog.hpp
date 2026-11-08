@@ -4,6 +4,7 @@
 // 本模块只枚举已存在的桌面文件并委托 Windows Shell 打开项目，不移动或修改用户文件。
 #include <string>
 #include <vector>
+#include <windows.h>
 
 namespace desktop_orb::platform {
 
@@ -12,12 +13,11 @@ namespace desktop_orb::platform {
 enum class DesktopFenceCategory { programs, folders, documents, other };
 
 // 作用：保存一个可显示和打开的桌面 Shell 项目信息。
-// 参数：无。返回：无；图标索引属于系统共享的小图标列表，不由此结构释放。
+// 参数：无。返回：无；项目图标由 Shell 按路径单独读取，不在目录项中保存临时句柄。
 struct DesktopItem {
     std::wstring name;
     std::wstring type_name;
     std::wstring path;
-    int icon_index = -1;
 };
 
 class DesktopItemCatalog {
@@ -33,6 +33,14 @@ public:
     // 作用：通过 Windows Shell 打开文件或文件夹。
     // 参数：path 为完整项目路径。返回：Shell 接受打开请求时为 true，否则为 false。
     [[nodiscard]] static bool Open(const std::wstring& path);
+
+    // 作用：从 Windows Shell 获取项目实际显示的大图标。
+    // 参数：path 为项目完整路径。返回：成功时返回新建 HICON，失败时为空；成功句柄由调用方 DestroyIcon。
+    [[nodiscard]] static HICON LoadIcon(const std::wstring& path);
+
+    // 作用：读取围栏分类在标题栏使用的系统图标。
+    // 参数：category 为围栏类别。返回：Shell 创建的 HICON；失败时为空，成功句柄由调用方 DestroyIcon。
+    [[nodiscard]] static HICON LoadCategoryIcon(DesktopFenceCategory category);
 };
 
 }  // desktop_orb::platform 命名空间结束

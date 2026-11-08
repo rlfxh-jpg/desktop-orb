@@ -13,7 +13,8 @@ bool WindowBase::CreateNative(const wchar_t* class_name, const wchar_t* title, D
     const HINSTANCE instance = GetModuleHandleW(nullptr);
     WNDCLASSEXW window_class{};
     window_class.cbSize = sizeof(window_class);
-    window_class.style = CS_HREDRAW | CS_VREDRAW;
+    // 核心逻辑：桌面围栏以第二次单击打开项目；统一注册双击消息，其他顶层窗口不使用该消息。
+    window_class.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     window_class.lpfnWndProc = WindowProc;
     window_class.hInstance = instance;
     window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);

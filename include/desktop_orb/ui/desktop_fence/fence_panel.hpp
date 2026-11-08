@@ -10,6 +10,8 @@
 
 namespace desktop_orb::ui {
 
+class FenceCard;
+
 class FencePanel final {
 public:
     // 作用：初始化尚未创建卡片窗口的围栏管理器。参数：无。返回：无。
@@ -36,8 +38,7 @@ public:
     std::function<void()> on_closed;
 
 private:
-    class Card;
-    std::array<std::unique_ptr<Card>, 4> cards_;
+    std::array<std::unique_ptr<FenceCard>, 4> cards_;
     bool visible_ = false;
 };
 

@@ -11,6 +11,7 @@ add_executable(desktop-orb WIN32
     src/platform/common/single_instance.cpp
     src/platform/common/settings.cpp
     src/platform/desktop_fence/desktop_item_catalog.cpp
+    src/platform/desktop_fence/desktop_wallpaper.cpp
     src/platform/window_switcher/window_catalog.cpp
     src/platform/window_switcher/thumbnail_manager.cpp
     src/platform/screenshot/screenshot_service.cpp
@@ -23,6 +24,9 @@ add_executable(desktop-orb WIN32
     src/ui/common/feature_layout.cpp
     src/ui/common/feature_menu.cpp
     src/ui/desktop_fence/fence_panel.cpp
+    src/ui/desktop_fence/fence_card.cpp
+    src/ui/desktop_fence/fence_card_content.cpp
+    src/ui/desktop_fence/fence_card_renderer.cpp
     src/ui/window_switcher/switcher_panel.cpp
     src/ui/screenshot/selection_window.cpp
     src/ui/screenshot/result_panel_window.cpp

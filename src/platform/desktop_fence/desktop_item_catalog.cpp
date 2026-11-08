@@ -82,13 +82,12 @@ std::vector<DesktopItem> DesktopItemCatalog::List(DesktopFenceCategory category)
                 seen_paths.insert(DeduplicationKey(path)).second) {
                 SHFILEINFOW info{};
                 const DWORD_PTR icon_result = SHGetFileInfoW(path.c_str(), 0, &info,
-                    sizeof(info), SHGFI_SYSICONINDEX | SHGFI_SMALLICON | SHGFI_TYPENAME);
+                    sizeof(info), SHGFI_TYPENAME);
                 DesktopItem item;
                 item.name = path.filename().wstring();
                 item.path = path.wstring();
                 item.type_name = icon_result ? info.szTypeName :
                     (is_directory ? L"文件夹" : path.extension().wstring());
-                item.icon_index = icon_result ? info.iIcon : -1;
                 items.push_back(std::move(item));
             }
             error.clear();
@@ -115,6 +114,25 @@ const wchar_t* DesktopItemCatalog::CategoryName(DesktopFenceCategory category) {
 bool DesktopItemCatalog::Open(const std::wstring& path) {
     return reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", path.c_str(),
         nullptr, nullptr, SW_SHOWNORMAL)) > 32;
+}
+
+HICON DesktopItemCatalog::LoadIcon(const std::wstring& path) {
+    SHFILEINFOW info{};
+    if (!SHGetFileInfoW(path.c_str(), 0, &info, sizeof(info), SHGFI_ICON | SHGFI_LARGEICON))
+        return nullptr;
+    return info.hIcon;
+}
+
+HICON DesktopItemCatalog::LoadCategoryIcon(DesktopFenceCategory category) {
+    const wchar_t* path = category == DesktopFenceCategory::folders ? L"."
+        : category == DesktopFenceCategory::programs ? L".lnk"
+        : category == DesktopFenceCategory::documents ? L".txt" : L".dat";
+    const DWORD attributes = category == DesktopFenceCategory::folders
+        ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_NORMAL;
+    SHFILEINFOW info{};
+    if (!SHGetFileInfoW(path, attributes, &info, sizeof(info),
+            SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES)) return nullptr;
+    return info.hIcon;
 }
 
 }  // desktop_orb::platform 命名空间结束
