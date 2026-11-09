@@ -5,15 +5,13 @@
 #include "desktop_orb/platform/common/monitor.hpp"
 #include <algorithm>
 #include <cmath>
-#include <numbers>
 
 namespace desktop_orb::ui {
 namespace {
 
 constexpr int kRadialLogicalGap = 6;
-constexpr int kNeighborLogicalGap = 8;
-constexpr int kRadiusGrowthPerFeature = 6;
-constexpr double kMaxArcAngle = 70.0 * std::numbers::pi / 180.0;
+constexpr int kNeighborLogicalGap = 4;
+constexpr int kRadiusGrowthPerFeature = 2;
 
 }  // 匿名命名空间结束
 
@@ -41,19 +39,20 @@ FeatureLayout ArrangeFeatures(RECT orb, RECT work, UINT dpi, size_t count) {
     const double half_span = (static_cast<double>(count) - 1.0) * spacing / 2.0;
 
     if (2.0 * half_span <= max_y - min_y) {
-        // 核心逻辑：沿圆弧布置，但用放大后的直径确定纵向间距；边缘处整体偏移，避免逐个裁切后重叠。
+        // 核心逻辑：按放大直径确定纵向间距；靠近屏幕边缘时整体平移，避免逐个裁切后重叠。
         const double shift = std::clamp(0.0, min_y - orb_y + half_span,
                                        max_y - orb_y - half_span);
-        const double furthest = std::max(std::abs(shift - half_span), std::abs(shift + half_span));
-        const double radius = std::max(minimum_radius +
-                                       (static_cast<double>(count) - 1.0) *
-                                           platform::Scale(kRadiusGrowthPerFeature, dpi),
-                                       furthest / std::sin(kMaxArcAngle));
+        // 核心逻辑：每个入口独立求满足悬浮球间距的最小横向位移。
+        // 外侧入口已有足够纵向距离，不再被统一圆弧半径推远。
+        const double radius = minimum_radius +
+            (static_cast<double>(count) - 1.0) *
+                platform::Scale(kRadiusGrowthPerFeature, dpi);
         for (size_t index = 0; index < count; ++index) {
             const double offset = (static_cast<double>(index) - (static_cast<double>(count) - 1.0) / 2.0) *
                                   spacing + shift;
-            const int x = static_cast<int>(std::lround(orb_x + direction *
+            const int horizontal = static_cast<int>(std::ceil(
                 std::sqrt(std::max(0.0, radius * radius - offset * offset))));
+            const int x = std::clamp(orb_x + direction * horizontal, min_x, max_x);
             const int y = static_cast<int>(std::lround(orb_y + offset));
             if (x < min_x || x > max_x || y < min_y || y > max_y) break;
             layout.centers.push_back({x, y});

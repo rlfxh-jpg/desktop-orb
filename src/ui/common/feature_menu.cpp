@@ -11,6 +11,8 @@
 namespace desktop_orb::ui {
 
 constexpr WORD kTooltipDelayMs = 3000;
+constexpr UINT_PTR kHoverExitTimer = 1;
+constexpr UINT kHoverExitDelayMs = 100;
 
 class FeatureMenu::Button final : public WindowBase {
 public:
@@ -36,7 +38,7 @@ public:
                           ex_style,
                           0, 0, kDefaultFeatureDiameter, kDefaultFeatureDiameter)) return false;
         if (icon_.ready()) {
-            if (!icon_.RenderLayered(handle(), 255)) return false;
+            if (!icon_.RenderLayered(handle(), 255, true)) return false;
         } else {
             SetWindowRgn(handle(), CreateEllipticRgn(0, 0, kDefaultFeatureDiameter, kDefaultFeatureDiameter), TRUE);
         }
@@ -79,6 +81,7 @@ public:
     // 作用：取消鼠标离开跟踪并恢复默认直径，供菜单隐藏时调用。
     // 参数：无。返回：无。
     void ResetHover() {
+        KillTimer(handle(), kHoverExitTimer);
         if (tracking_mouse_) {
             TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE | TME_CANCEL, handle(), 0};
             TrackMouseEvent(&tracking);
@@ -106,6 +109,7 @@ protected:
     // 返回：已处理时为 0，否则为基类消息处理结果。
     LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) override {
         if (message == WM_MOUSEMOVE) {
+            KillTimer(handle(), kHoverExitTimer);
             if (!tracking_mouse_) {
                 TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE, handle(), 0};
                 tracking_mouse_ = TrackMouseEvent(&tracking) != FALSE;
@@ -118,9 +122,29 @@ protected:
         }
         if (message == WM_MOUSELEAVE) {
             tracking_mouse_ = false;
-            expanded_ = false;
-            SetDiameter(default_size_);
+            // 核心逻辑：透明图标边缘和尺寸变化可能交替触发进入、离开。
+            // 延迟检查实际屏幕坐标，只有真正离开放大范围才收缩。
+            SetTimer(handle(), kHoverExitTimer, kHoverExitDelayMs, nullptr);
             return 0;
+        }
+        if (message == WM_TIMER && wparam == kHoverExitTimer) {
+            POINT cursor{};
+            if (GetCursorPos(&cursor)) {
+                const int dx = cursor.x - center_x_;
+                const int dy = cursor.y - center_y_;
+                const int radius = hovered_size_ / 2 + 2;
+                if (dx * dx + dy * dy <= radius * radius) return 0;
+            }
+            KillTimer(handle(), kHoverExitTimer);
+            if (expanded_) {
+                expanded_ = false;
+                SetDiameter(default_size_);
+            }
+            return 0;
+        }
+        if (message == WM_SETCURSOR) {
+            SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+            return TRUE;
         }
         if (message == WM_PAINT) {
             if (icon_.ready()) {
@@ -161,7 +185,7 @@ private:
         SetWindowPos(handle(), nullptr, center_x_ - diameter / 2, center_y_ - diameter / 2,
                      diameter, diameter, SWP_NOACTIVATE | SWP_NOZORDER);
         if (icon_.ready()) {
-            icon_.RenderLayered(handle(), 255);
+            icon_.RenderLayered(handle(), 255, true);
         } else {
             SetWindowRgn(handle(), CreateEllipticRgn(0, 0, diameter, diameter), TRUE);
         }

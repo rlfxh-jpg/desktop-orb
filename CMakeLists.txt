@@ -10,6 +10,7 @@ add_executable(desktop-orb WIN32
     src/platform/common/asset_path.cpp
     src/platform/common/single_instance.cpp
     src/platform/common/settings.cpp
+    src/platform/app_launcher/installed_app_catalog.cpp
     src/platform/desktop_fence/desktop_item_catalog.cpp
     src/platform/desktop_fence/desktop_icon_visibility.cpp
     src/platform/desktop_fence/desktop_window_layer.cpp
@@ -25,6 +26,7 @@ add_executable(desktop-orb WIN32
     src/ui/common/orb_window.cpp
     src/ui/common/feature_layout.cpp
     src/ui/common/feature_menu.cpp
+    src/ui/app_launcher/app_list_panel.cpp
     src/ui/desktop_fence/fence_panel.cpp
     src/ui/desktop_fence/fence_card.cpp
     src/ui/desktop_fence/fence_card_content.cpp

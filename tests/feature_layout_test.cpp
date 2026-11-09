@@ -27,7 +27,7 @@ desktop_orb::ui::FeatureLayout CheckLayout(RECT orb, RECT work, UINT dpi, size_t
     if (!count) return layout;
 
     const int hovered = layout.hovered_diameter;
-    const int gap = desktop_orb::platform::Scale(8, dpi);
+    const int gap = desktop_orb::platform::Scale(4, dpi);
     const double orb_x = (orb.left + orb.right) / 2.0;
     const double orb_y = (orb.top + orb.bottom) / 2.0;
     const double orb_radius = std::max(orb.right - orb.left, orb.bottom - orb.top) / 2.0;
@@ -64,8 +64,11 @@ int main() {
     Require(std::hypot(five.centers[2].x - 29, five.centers[2].y - 329) >
             std::hypot(one.centers[0].x - 29, one.centers[0].y - 329),
             "入口增加后布局半径没有增大");
-    for (size_t count : {size_t{2}, size_t{3}, size_t{20}})
+    for (size_t count : {size_t{2}, size_t{3}, size_t{4}, size_t{20}})
         CheckLayout(left_orb, work, 96, count);
+    const auto four = CheckLayout(left_orb, work, 96, 4);
+    Require(four.centers[1].x - left_orb.right < 40,
+        "四入口时中间功能离悬浮球过远");
     CheckLayout({1862, 0, 1920, 58}, work, 96, 5);
     CheckLayout({0, 1022, 58, 1080}, work, 96, 5);
     CheckLayout({0, 300, 87, 387}, work, 144, 5);

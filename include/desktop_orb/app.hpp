@@ -7,6 +7,7 @@
 #include "desktop_orb/platform/screenshot/screenshot_service.hpp"
 #include "desktop_orb/platform/window_switcher/window_catalog.hpp"
 #include "desktop_orb/ui/common/feature_menu.hpp"
+#include "desktop_orb/ui/app_launcher/app_list_panel.hpp"
 #include "desktop_orb/ui/desktop_fence/fence_panel.hpp"
 #include "desktop_orb/ui/common/orb_window.hpp"
 #include "desktop_orb/ui/screenshot/selection_window.hpp"
@@ -34,6 +35,9 @@ private:
     void ToggleMenu();
     // 作用：在悬浮球所在显示器的同侧打开窗口切换面板。参数：无。返回：无。
     void OpenSwitcher();
+    // 作用：在悬浮球所在显示器同侧打开可搜索的已安装应用列表。
+    // 参数：无。返回：无；面板打开时隐藏悬浮球。
+    void OpenAppList();
     // 作用：在悬浮球所在显示器打开桌面围栏项目面板。
     // 参数：无。返回：无；打开面板时隐藏悬浮球，关闭后由回调恢复。
     void OpenDesktopFence();
@@ -68,6 +72,7 @@ private:
     ui::OrbWindow orb_;
     ui::FeatureMenu menu_;
     ui::SwitcherPanel panel_;
+    ui::AppListPanel app_list_panel_;
     ui::FencePanel fence_panel_;
     ui::SelectionWindow screenshot_window_;
     std::future<platform::ScreenshotAiResult> screenshot_ai_future_;

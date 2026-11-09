@@ -37,9 +37,10 @@ public:
     // 返回：成功为 true；尺寸、缓冲区或图片无效以及绘制失败时为 false。
     bool Rasterize(int width, int height, void* pixels, int stride) const;
     // 作用：把图标按窗口尺寸提交到分层窗口，保留 PNG 逐像素透明度。
-    // 参数：window 为已创建的分层窗口；opacity 为叠加在 PNG Alpha 上的整体透明度。
+    // 参数：window 为已创建的分层窗口；opacity 为叠加在 PNG Alpha 上的整体透明度；
+    //       circular_hit_area 为 true 时给透明圆形点击区写入近乎不可见的 Alpha。
     // 返回：提交成功为 true；窗口、图片或 GDI 资源不可用时为 false。
-    bool RenderLayered(HWND window, BYTE opacity) const;
+    bool RenderLayered(HWND window, BYTE opacity, bool circular_hit_area = false) const;
 
 private:
     struct Impl;

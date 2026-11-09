@@ -128,21 +128,27 @@ bool App::Initialize() {
     const auto primary = platform::MonitorAt({0, 0});
     const POINT initial = settings_.orb_position.value_or(POINT{
         primary.work.right - 58, primary.work.top + (primary.work.bottom - primary.work.top) / 3});
-    if (!orb_.Create(initial) || !panel_.Create() || !fence_panel_.Create() ||
+    if (!orb_.Create(initial) || !panel_.Create() || !app_list_panel_.Create() ||
+        !fence_panel_.Create() ||
         !screenshot_window_.Create()) return false;
     orb_.SnapToEdge();
     if (!menu_.Add(L"窗口切换", L"window_switcher.png", [this] { OpenSwitcher(); })) return false;
     if (!menu_.Add(L"截图", L"screenshot.png", [this] { CaptureScreenshot(); })) return false;
     if (!menu_.Add(L"桌面围栏", L"desktop_fence.png", [this] { OpenDesktopFence(); })) return false;
+    if (!menu_.Add(L"所有应用", L"all_apps.png", [this] { OpenAppList(); })) return false;
     auto excluded = menu_.Handles();
     excluded.push_back(orb_.handle());
     excluded.push_back(panel_.handle());
+    excluded.push_back(app_list_panel_.handle());
     for (HWND handle : fence_panel_.Handles()) excluded.push_back(handle);
     panel_.SetExcluded(std::move(excluded));
     screenshot_window_.on_action = [this](ui::ScreenshotAction action, RECT selection) {
         HandleScreenshotAction(action, selection);
     };
     panel_.on_closed = [this] {
+        ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
+    };
+    app_list_panel_.on_closed = [this] {
         ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
     };
     fence_panel_.on_closed = [this] {
@@ -193,13 +199,16 @@ void App::Tick() {
     const RECT hover_bounds{orb_bounds.left - 28, orb_bounds.top - 28,
                             orb_bounds.right + 28, orb_bounds.bottom + 28};
     orb_.SetAlpha(Contains(hover_bounds, cursor) || menu_.visible() || panel_.visible() ||
+                  app_list_panel_.visible() ||
                   fence_panel_.visible() ? 255 : 125);
 
     const bool left_down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
     if (left_down && !previous_left_down_ &&
-        (menu_.visible() || panel_.visible())) {
+        (menu_.visible() || panel_.visible() || app_list_panel_.visible())) {
         bool inside = Contains(orb_bounds, cursor);
         if (panel_.visible()) inside = inside || Contains(Bounds(panel_.handle()), cursor);
+        if (app_list_panel_.visible())
+            inside = inside || Contains(Bounds(app_list_panel_.handle()), cursor);
         if (menu_.visible()) {
             for (HWND button : menu_.Handles()) inside = inside || Contains(Bounds(button), cursor);
         }
@@ -223,6 +232,7 @@ void App::ToggleMenu() {
     if (screenshot_window_.visible()) return;
     if (menu_.visible()) { menu_.Hide(); return; }
     panel_.Hide();
+    app_list_panel_.Hide();
     const RECT bounds = orb_.Bounds();
     const POINT center{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
     menu_.ShowAround(bounds, platform::MonitorAt(center), GetDpiForWindow(orb_.handle()));
@@ -230,6 +240,7 @@ void App::ToggleMenu() {
 
 void App::OpenSwitcher() {
     menu_.Hide();
+    app_list_panel_.Hide();
     fence_panel_.Hide();
     const RECT bounds = orb_.Bounds();
     const POINT center{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
@@ -240,9 +251,25 @@ void App::OpenSwitcher() {
     if (panel_.visible()) ShowWindow(orb_.handle(), SW_HIDE);
 }
 
+// 作用：显示 AppsFolder 中的可启动应用，面板与悬浮球位于同侧。
+// 参数：无。返回：无；面板显示后隐藏悬浮球，关闭时由回调恢复。
+void App::OpenAppList() {
+    menu_.Hide();
+    panel_.Hide();
+    fence_panel_.Hide();
+    const RECT bounds = orb_.Bounds();
+    const POINT center{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
+    const auto monitor = platform::MonitorAt(center);
+    const auto edge = center.x < (monitor.work.left + monitor.work.right) / 2
+        ? ui::AppListPanel::Edge::left : ui::AppListPanel::Edge::right;
+    app_list_panel_.ShowFor(monitor, edge);
+    if (app_list_panel_.visible()) ShowWindow(orb_.handle(), SW_HIDE);
+}
+
 void App::OpenDesktopFence() {
     menu_.Hide();
     panel_.Hide();
+    app_list_panel_.Hide();
     if (fence_panel_.visible()) {
         fence_panel_.Hide();
         return;
@@ -263,6 +290,7 @@ void App::OpenDesktopFence() {
 void App::CaptureScreenshot() {
     menu_.Hide();
     panel_.Hide();
+    app_list_panel_.Hide();
     // 核心逻辑：围栏是持续显示的桌面功能，截图不改变其开关状态；
     // 用户若在桌面上截取围栏，快照也应保留当前可见内容。
     ShowWindow(orb_.handle(), SW_HIDE);
@@ -393,6 +421,7 @@ void App::PollScreenshotAnalysis() {
 void App::CloseOverlays() {
     menu_.Hide();
     panel_.Hide();
+    app_list_panel_.Hide();
     fence_panel_.Hide();
 }
 

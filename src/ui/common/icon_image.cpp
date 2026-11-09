@@ -3,6 +3,7 @@
 #include "desktop_orb/ui/common/icon_image.hpp"
 
 #include "desktop_orb/platform/common/asset_path.hpp"
+#include <algorithm>
 #include <objidl.h>
 #include <gdiplus.h>
 #include <climits>
@@ -98,7 +99,7 @@ bool IconImage::Rasterize(int width, int height, void* pixels, int stride) const
     return frame.UnlockBits(&data) == Gdiplus::Ok;
 }
 
-bool IconImage::RenderLayered(HWND window, BYTE opacity) const {
+bool IconImage::RenderLayered(HWND window, BYTE opacity, bool circular_hit_area) const {
     if (!ready() || !window) return false;
     RECT bounds{};
     if (!GetWindowRect(window, &bounds)) return false;
@@ -121,6 +122,21 @@ bool IconImage::RenderLayered(HWND window, BYTE opacity) const {
     HBITMAP bitmap = memory ? CreateDIBSection(memory, &info, DIB_RGB_COLORS, &pixels, nullptr, 0) : nullptr;
     bool success = false;
     if (bitmap && pixels && Rasterize(width, height, pixels, width * 4)) {
+        if (circular_hit_area) {
+            // 核心逻辑：Windows 会让完全透明的分层窗口像素穿透鼠标。
+            // 圆内最低 Alpha 为 1，使图标外的透明边缘保持稳定的命中与箭头光标。
+            auto* bytes = static_cast<BYTE*>(pixels);
+            const long long diameter = std::min(width, height);
+            for (int y = 0; y < height; ++y) {
+                const long long dy = 2LL * y + 1 - height;
+                for (int x = 0; x < width; ++x) {
+                    const long long dx = 2LL * x + 1 - width;
+                    BYTE& alpha = bytes[(static_cast<size_t>(y) * width + x) * 4 + 3];
+                    if (dx * dx + dy * dy <= diameter * diameter && alpha == 0)
+                        alpha = 1;
+                }
+            }
+        }
         HGDIOBJ previous = SelectObject(memory, bitmap);
         POINT position{bounds.left, bounds.top};
         POINT origin{0, 0};
