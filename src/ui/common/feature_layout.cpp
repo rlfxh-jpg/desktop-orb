@@ -10,7 +10,7 @@ namespace desktop_orb::ui {
 namespace {
 
 constexpr int kRadialLogicalGap = 6;
-constexpr int kNeighborLogicalGap = 4;
+constexpr int kNeighborLogicalGap = 2;
 constexpr int kRadiusGrowthPerFeature = 2;
 
 }  // 匿名命名空间结束

@@ -45,9 +45,15 @@ private:
     void Filter();
     // 作用：释放当前缓存的所有图标句柄。参数：无。返回：无。
     void ReleaseIcons();
-    // 作用：启动列表中当前选中的应用。
-    // 参数：无。返回：无；Shell 拒绝启动时保留面板并提示。
-    void LaunchSelected();
+    // 作用：启动鼠标实际点击的应用行，滚轮和键盘选中变化不会触发启动。
+    // 参数：row 为列表中的行索引。返回：无；标题行或 Shell 拒绝启动时保留面板。
+    void LaunchRow(size_t row);
+    // 作用：让列表按固定行高稳定滚动，并把真正点击的行交给面板处理。
+    // 参数：window 为列表 HWND；message 为消息；wparam、lparam 为消息参数；
+    //       subclass_id 为子类标识；reference 为本面板地址。
+    // 返回：点击后为原列表过程结果，其余消息也交给原列表过程。
+    static LRESULT CALLBACK ListSubclass(HWND window, UINT message, WPARAM wparam,
+        LPARAM lparam, UINT_PTR subclass_id, DWORD_PTR reference);
     // 作用：绘制单个拥有自绘样式的应用行。
     // 参数：item 为 Windows 提供的绘制数据。返回：无；无效索引时只绘制背景。
     void DrawItem(const DRAWITEMSTRUCT& item);
@@ -67,6 +73,9 @@ private:
     std::mutex icons_mutex_;
     std::jthread icon_worker_;
     std::wstring error_;
+    size_t pressed_row_ = static_cast<size_t>(-1);
+    int wheel_remainder_ = 0;
+    bool scrolling_ = false;
     bool visible_ = false;
 };
 

@@ -9,7 +9,7 @@
 namespace desktop_orb::ui {
 
 inline constexpr int kDefaultFeatureDiameter = 44;
-inline constexpr int kHoveredFeatureDiameter = 64;
+inline constexpr int kHoveredFeatureDiameter = 52;
 
 struct FeatureLayout {
     int default_diameter = 0;

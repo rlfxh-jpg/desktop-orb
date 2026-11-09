@@ -16,10 +16,13 @@ constexpr int kPadding = 18;
 constexpr int kSearchTop = 62;
 constexpr int kSearchHeight = 36;
 constexpr int kRowHeight = 52;
-constexpr int kSectionHeight = 38;
 constexpr size_t kDesktopHeader = static_cast<size_t>(-1);
 constexpr size_t kPackagedHeader = static_cast<size_t>(-2);
 constexpr UINT kIconReady = WM_APP + 17;
+constexpr UINT kAppClicked = WM_APP + 18;
+constexpr UINT_PTR kListSubclassId = 1;
+constexpr UINT_PTR kScrollSettledTimer = 2;
+constexpr UINT kScrollSettleMs = 120;
 
 // 作用：判断列表行是否为分组标题。参数：index 为列表映射索引。返回：标题行时为 true。
 bool IsHeader(size_t index) { return index == kDesktopHeader || index == kPackagedHeader; }
@@ -41,7 +44,10 @@ AppListPanel::~AppListPanel() {
     icon_worker_.request_stop();
     if (icon_worker_.joinable()) icon_worker_.join();
     if (search_ && IsWindow(search_)) DestroyWindow(search_);
-    if (list_ && IsWindow(list_)) DestroyWindow(list_);
+    if (list_ && IsWindow(list_)) {
+        RemoveWindowSubclass(list_, ListSubclass, kListSubclassId);
+        DestroyWindow(list_);
+    }
     ReleaseIcons();
     if (font_) DeleteObject(font_);
 }
@@ -56,10 +62,12 @@ bool AppListPanel::Create() {
         GetModuleHandleW(nullptr), nullptr);
     if (!search_) return false;
     list_ = CreateWindowExW(0, L"LISTBOX", L"",
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY | LBS_OWNERDRAWVARIABLE |
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY | LBS_OWNERDRAWFIXED |
         LBS_HASSTRINGS | LBS_NOINTEGRALHEIGHT, 0, 0, 1, 1, handle(), nullptr,
         GetModuleHandleW(nullptr), nullptr);
     if (!list_) return false;
+    if (!SetWindowSubclass(list_, ListSubclass, kListSubclassId,
+            reinterpret_cast<DWORD_PTR>(this))) return false;
     SendMessageW(search_, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索应用名称"));
     return true;
 }
@@ -78,6 +86,8 @@ void AppListPanel::Position() {
     MoveWindow(search_, padding, platform::Scale(kSearchTop, dpi),
         std::max(1, width - padding * 2), platform::Scale(kSearchHeight, dpi), TRUE);
     MoveWindow(list_, 0, header, width, std::max(1, height - header), TRUE);
+    // 固定高度列表在跨屏 DPI 变化后不会再次逐项测量，显式同步物理像素行高。
+    SendMessageW(list_, LB_SETITEMHEIGHT, 0, platform::Scale(kRowHeight, dpi));
     // 核心逻辑：输入控件使用面板 DPI 对应的字体，避免高缩放显示器上文字过小。
     HFONT next = CreateFontW(-platform::Scale(15, dpi), 0, 0, 0, FW_NORMAL,
         FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
@@ -113,6 +123,10 @@ void AppListPanel::ShowFor(const platform::Monitor& monitor, Edge edge) {
 void AppListPanel::Hide() {
     if (!visible_) return;
     visible_ = false;
+    pressed_row_ = static_cast<size_t>(-1);
+    wheel_remainder_ = 0;
+    scrolling_ = false;
+    KillTimer(handle(), kScrollSettledTimer);
     ShowWindow(handle(), SW_HIDE);
     icon_worker_.request_stop();
     if (icon_worker_.joinable()) icon_worker_.join();
@@ -127,6 +141,8 @@ void AppListPanel::Hide() {
 // 作用：根据搜索框文字更新列表，不重新枚举 AppsFolder。
 // 参数：无。返回：无；读取输入失败时按空词显示全部应用。
 void AppListPanel::Filter() {
+    pressed_row_ = static_cast<size_t>(-1);
+    wheel_remainder_ = 0;
     const int length = GetWindowTextLengthW(search_);
     std::wstring query(static_cast<size_t>(length) + 1, L'\0');
     const int copied = GetWindowTextW(search_, query.data(), length + 1);
@@ -186,16 +202,69 @@ void AppListPanel::LoadIcons(std::stop_token stop) {
     }
 }
 
-// 作用：启动用户单击的应用，成功后关闭面板。
-// 参数：无。返回：无；未选中或 Shell 启动失败时保留面板。
-void AppListPanel::LaunchSelected() {
-    const LRESULT selected = SendMessageW(list_, LB_GETCURSEL, 0, 0);
-    if (selected == LB_ERR || static_cast<size_t>(selected) >= visible_indices_.size()) return;
-    const size_t index = visible_indices_[static_cast<size_t>(selected)];
-    if (IsHeader(index)) { SendMessageW(list_, LB_SETCURSEL, static_cast<WPARAM>(-1), 0); return; }
+// 作用：启动鼠标单击的应用行，成功后关闭面板。
+// 参数：row 为列表行索引。返回：无；标题行或 Shell 启动失败时保留面板。
+void AppListPanel::LaunchRow(size_t row) {
+    if (row >= visible_indices_.size()) return;
+    const size_t index = visible_indices_[row];
+    if (IsHeader(index)) return;
     const auto& app = apps_[index];
     if (platform::InstalledAppCatalog::Launch(app)) Hide();
     else MessageBoxW(handle(), L"Windows 无法启动这个应用。", L"启动失败", MB_OK | MB_ICONWARNING);
+}
+
+// 作用：统一处理列表滚轮，并仅在鼠标按下、释放位于同一行时发出启动消息。
+// 参数：window 为列表窗口；message 为消息；wparam、lparam 为消息数据；
+//       subclass_id 为注册时的标识；reference 为 AppListPanel 地址。
+// 返回：原列表窗口过程的返回值；有效点击另外向面板投递行号。
+LRESULT CALLBACK AppListPanel::ListSubclass(HWND window, UINT message, WPARAM wparam,
+    LPARAM lparam, UINT_PTR, DWORD_PTR reference) {
+    auto* panel = reinterpret_cast<AppListPanel*>(reference);
+    if (message == WM_MOUSEWHEEL) {
+        // 核心逻辑：列表框默认按系统行数一次跳多行；这里每个完整刻度只移动一行。
+        // 保留未满一刻度的触控板增量，避免微小反向输入造成上下跳动。
+        panel->pressed_row_ = static_cast<size_t>(-1);
+        panel->wheel_remainder_ += GET_WHEEL_DELTA_WPARAM(wparam);
+        const int steps = panel->wheel_remainder_ / WHEEL_DELTA;
+        panel->wheel_remainder_ -= steps * WHEEL_DELTA;
+        if (steps != 0) {
+            const int top = static_cast<int>(SendMessageW(window, LB_GETTOPINDEX, 0, 0));
+            SendMessageW(window, LB_SETTOPINDEX,
+                static_cast<WPARAM>(std::max(0, top - steps)), 0);
+            panel->scrolling_ = true;
+            SetTimer(panel->handle(), kScrollSettledTimer, kScrollSettleMs, nullptr);
+        }
+        return 0;
+    }
+    if (message == WM_LBUTTONDOWN) {
+        const LRESULT hit = SendMessageW(window, LB_ITEMFROMPOINT, 0, lparam);
+        panel->pressed_row_ = HIWORD(hit) == 0
+            ? static_cast<size_t>(LOWORD(hit)) : static_cast<size_t>(-1);
+    }
+    if (message == WM_VSCROLL || message == WM_CAPTURECHANGED) {
+        panel->pressed_row_ = static_cast<size_t>(-1);
+    }
+    if (message == WM_VSCROLL) {
+        panel->scrolling_ = true;
+        SetTimer(panel->handle(), kScrollSettledTimer, kScrollSettleMs, nullptr);
+    }
+    if (message == WM_MOUSEMOVE && (wparam & MK_LBUTTON)) {
+        const LRESULT hit = SendMessageW(window, LB_ITEMFROMPOINT, 0, lparam);
+        if (HIWORD(hit) != 0 || static_cast<size_t>(LOWORD(hit)) != panel->pressed_row_)
+            panel->pressed_row_ = static_cast<size_t>(-1);
+    }
+    // 核心逻辑：列表框释放鼠标捕获时会同步发送 WM_CAPTURECHANGED。
+    // 先保存按下行，避免原窗口过程清理捕获状态后丢失有效点击。
+    const size_t pressed_row = panel->pressed_row_;
+    const LRESULT result = DefSubclassProc(window, message, wparam, lparam);
+    if (message == WM_LBUTTONUP) {
+        const LRESULT hit = SendMessageW(window, LB_ITEMFROMPOINT, 0, lparam);
+        if (HIWORD(hit) == 0 && static_cast<size_t>(LOWORD(hit)) == pressed_row) {
+            PostMessageW(panel->handle(), kAppClicked, LOWORD(hit), 0);
+        }
+        panel->pressed_row_ = static_cast<size_t>(-1);
+    }
+    return result;
 }
 
 // 作用：绘制应用名称、Shell 图标和当前选择状态。
@@ -257,10 +326,8 @@ LRESULT AppListPanel::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) 
         case WM_MEASUREITEM: {
             auto* item = reinterpret_cast<MEASUREITEMSTRUCT*>(lparam);
             if (item->CtlType == ODT_LISTBOX) {
-                const size_t index = item->itemID < visible_indices_.size()
-                    ? visible_indices_[item->itemID] : 0;
-                item->itemHeight = platform::Scale(IsHeader(index)
-                    ? kSectionHeight : kRowHeight, GetDpiForWindow(handle()));
+                // 固定行高让列表框的顶部索引与滚动条位置保持一一对应。
+                item->itemHeight = platform::Scale(kRowHeight, GetDpiForWindow(handle()));
                 return TRUE;
             }
             break;
@@ -276,12 +343,12 @@ LRESULT AppListPanel::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) 
                 Filter();
                 return 0;
             }
-            if (reinterpret_cast<HWND>(lparam) == list_ && HIWORD(wparam) == LBN_SELCHANGE) {
-                LaunchSelected();
-                return 0;
-            }
             break;
+        case kAppClicked:
+            if (visible_) LaunchRow(static_cast<size_t>(wparam));
+            return 0;
         case kIconReady: {
+            if (scrolling_) return 0;
             const size_t index = static_cast<size_t>(wparam);
             const auto found = std::find(visible_indices_.begin(), visible_indices_.end(), index);
             if (visible_ && found != visible_indices_.end()) {
@@ -293,6 +360,18 @@ LRESULT AppListPanel::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) 
             }
             return 0;
         }
+        case WM_TIMER:
+            if (wparam == kScrollSettledTimer) {
+                KillTimer(handle(), kScrollSettledTimer);
+                scrolling_ = false;
+                InvalidateRect(list_, nullptr, FALSE);
+                return 0;
+            }
+            break;
+        case WM_MOUSEWHEEL:
+            // 鼠标在搜索框或标题上滚动时，仍交给列表统一处理。
+            SendMessageW(list_, WM_MOUSEWHEEL, wparam, lparam);
+            return 0;
         case WM_CTLCOLOREDIT:
             if (reinterpret_cast<HWND>(lparam) == search_) {
                 SetTextColor(reinterpret_cast<HDC>(wparam), RGB(38, 48, 59));
