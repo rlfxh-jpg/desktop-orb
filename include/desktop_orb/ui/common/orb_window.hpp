@@ -17,6 +17,7 @@ public:
     std::function<void()> on_tick;
     std::function<void()> on_hotkey;
     std::function<void()> on_context;
+    std::function<void()> on_clipboard_changed;
 
     // 作用：创建并显示置顶悬浮球。
     // 参数：initial 为初始屏幕坐标。返回：窗口和图片创建成功为 true，否则为 false。

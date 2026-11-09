@@ -157,6 +157,25 @@ BitmapHandle CropBitmap(HBITMAP source, RECT source_bounds, RECT selection) {
     return cropped;
 }
 
+// 作用：把相对选区的编辑内容绘制到独立裁剪位图上。
+// 参数：bitmap 为待修改位图；width、height 为位图尺寸；edits 为编辑数据指针。
+// 返回：编辑成功或无需编辑时为 true；设备上下文不可用时为 false。
+bool EditBitmap(HBITMAP bitmap, int width, int height, const ScreenshotEdits* edits) {
+    if (!bitmap) return false;
+    if (!edits || (edits->strokes.empty() && edits->pixelated_areas.empty())) return true;
+    HDC dc = CreateCompatibleDC(nullptr);
+    if (!dc) return false;
+    HGDIOBJ previous = SelectObject(dc, bitmap);
+    const bool selected = previous && previous != HGDI_ERROR;
+    bool applied = false;
+    if (selected) {
+        applied = ApplyScreenshotEdits(dc, width, height, *edits);
+        SelectObject(dc, previous);
+    }
+    DeleteDC(dc);
+    return selected && applied;
+}
+
 }  // 匿名命名空间结束
 
 ScreenshotService::~ScreenshotService() { Reset(); }
@@ -203,7 +222,7 @@ bool ScreenshotService::NormalizeSelection(RECT selection, RECT& cropped) const 
 }
 
 ScreenshotResult ScreenshotService::SaveSelection(
-    RECT selection, const std::filesystem::path& directory) const {
+    RECT selection, const std::filesystem::path& directory, const ScreenshotEdits* edits) const {
     ScreenshotResult result;
     RECT clipped{};
     if (!NormalizeSelection(selection, clipped)) { result.error = L"请先框选有效的截图区域。"; return result; }
@@ -215,12 +234,17 @@ ScreenshotResult ScreenshotService::SaveSelection(
     result.file_path = directory / ScreenshotFilename();
     auto cropped = CropBitmap(bitmap_, bounds_, clipped);
     if (!cropped.value) { result.error = L"无法裁剪所选截图区域。"; return result; }
+    if (!EditBitmap(cropped.value, clipped.right - clipped.left, clipped.bottom - clipped.top, edits)) {
+        result.error = L"无法应用截图标注。";
+        return result;
+    }
     result.saved = SavePng(cropped.value, result.file_path, result.error);
     return result;
 }
 
 bool ScreenshotService::EncodeSelectionPng(
-    RECT selection, std::vector<std::uint8_t>& png_bytes, std::wstring& error) const {
+    RECT selection, std::vector<std::uint8_t>& png_bytes, std::wstring& error,
+    const ScreenshotEdits* edits) const {
     png_bytes.clear();
     RECT clipped{};
     if (!NormalizeSelection(selection, clipped)) {
@@ -230,6 +254,10 @@ bool ScreenshotService::EncodeSelectionPng(
     auto cropped = CropBitmap(bitmap_, bounds_, clipped);
     if (!cropped.value) {
         error = L"无法裁剪所选截图区域。";
+        return false;
+    }
+    if (!EditBitmap(cropped.value, clipped.right - clipped.left, clipped.bottom - clipped.top, edits)) {
+        error = L"无法应用截图标注。";
         return false;
     }
 
@@ -276,15 +304,42 @@ bool ScreenshotService::EncodeSelectionPng(
     return true;
 }
 
-ScreenshotResult ScreenshotService::CopySelection(RECT selection) const {
+ScreenshotResult ScreenshotService::CopySelection(RECT selection, const ScreenshotEdits* edits) const {
     ScreenshotResult result;
     RECT clipped{};
     if (!NormalizeSelection(selection, clipped)) { result.error = L"请先框选有效的截图区域。"; return result; }
     auto cropped = CropBitmap(bitmap_, bounds_, clipped);
     if (!cropped.value) { result.error = L"无法裁剪所选截图区域。"; return result; }
+    if (!EditBitmap(cropped.value, clipped.right - clipped.left, clipped.bottom - clipped.top, edits)) {
+        result.error = L"无法应用截图标注。";
+        return result;
+    }
     result.copied_to_clipboard = PublishClipboard(cropped);
     if (!result.copied_to_clipboard) result.error = L"无法打开剪贴板或发布截图。";
     return result;
+}
+
+// 作用：返回包含标注和马赛克的独立选区位图。
+// 参数：selection 为屏幕坐标；edits 为可选效果；error 接收错误。
+// 返回：新位图句柄或空句柄；成功时由调用方释放。
+HBITMAP ScreenshotService::CreateSelectionBitmap(RECT selection, const ScreenshotEdits* edits,
+    std::wstring& error) const {
+    RECT clipped{};
+    if (!NormalizeSelection(selection, clipped)) {
+        error = L"请先框选有效的截图区域。";
+        return nullptr;
+    }
+    auto cropped = CropBitmap(bitmap_, bounds_, clipped);
+    if (!cropped.value) {
+        error = L"无法裁剪所选截图区域。";
+        return nullptr;
+    }
+    if (!EditBitmap(cropped.value, clipped.right - clipped.left, clipped.bottom - clipped.top, edits)) {
+        error = L"无法应用截图标注。";
+        return nullptr;
+    }
+    error.clear();
+    return cropped.Release();
 }
 
 }  // desktop_orb::platform 命名空间结束

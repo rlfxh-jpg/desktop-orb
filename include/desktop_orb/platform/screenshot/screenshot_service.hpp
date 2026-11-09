@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <windows.h>
+#include "desktop_orb/platform/screenshot/screenshot_edits.hpp"
 
 namespace desktop_orb::platform {
 
@@ -47,15 +48,22 @@ public:
     // 参数：selection 为屏幕坐标选区；directory 为用户选择的现有输出文件夹。
     // 返回：保存状态、输出路径及失败原因。
     [[nodiscard]] ScreenshotResult SaveSelection(
-        RECT selection, const std::filesystem::path& directory) const;
+        RECT selection, const std::filesystem::path& directory,
+        const ScreenshotEdits* edits = nullptr) const;
     // 作用：把虚拟桌面选区裁剪并编码为 PNG 字节，供截图分析模块上传。
     // 参数：selection 为屏幕坐标选区；png_bytes 接收完整 PNG；error 接收失败原因。
     // 返回：编码成功为 true；选区无效、裁剪失败或 PNG 编码失败时为 false。
     [[nodiscard]] bool EncodeSelectionPng(
-        RECT selection, std::vector<std::uint8_t>& png_bytes, std::wstring& error) const;
+        RECT selection, std::vector<std::uint8_t>& png_bytes, std::wstring& error,
+        const ScreenshotEdits* edits = nullptr) const;
     // 作用：把虚拟桌面选区裁剪后复制到 Windows 剪贴板。
     // 参数：selection 为屏幕坐标选区。返回：复制成功状态及失败原因。
-    [[nodiscard]] ScreenshotResult CopySelection(RECT selection) const;
+    [[nodiscard]] ScreenshotResult CopySelection(RECT selection, const ScreenshotEdits* edits = nullptr) const;
+    // 作用：取得含编辑内容的独立选区位图，供桌面贴图窗口长期持有。
+    // 参数：selection 为屏幕选区；edits 为可选编辑数据；error 接收错误。
+    // 返回：调用方拥有的 HBITMAP；失败时为空，调用方须用 DeleteObject 释放非空句柄。
+    [[nodiscard]] HBITMAP CreateSelectionBitmap(RECT selection, const ScreenshotEdits* edits,
+        std::wstring& error) const;
     // 作用：销毁当前快照并清空坐标范围。参数：无。返回：无。
     void Reset();
 

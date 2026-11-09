@@ -95,6 +95,7 @@ LRESULT OrbWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
         case WM_RBUTTONUP: if (on_context) on_context(); return 0;
         case WM_TIMER: if (wparam == kTimer && on_tick) on_tick(); return 0;
         case WM_HOTKEY: if (on_hotkey) on_hotkey(); return 0;
+        case WM_CLIPBOARDUPDATE: if (on_clipboard_changed) on_clipboard_changed(); return 0;
         case WM_DPICHANGED:
         case WM_DISPLAYCHANGE:
             SnapToEdge();

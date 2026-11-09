@@ -12,7 +12,10 @@ namespace desktop_orb::ui {
 
 // 作用：表示选区完成后用户请求的操作。
 // 参数：无。返回：无。
-enum class ScreenshotAction { extract_text, summarize, copy, save, recapture, close, copy_analysis_result };
+enum class ScreenshotAction {
+    extract_text, summarize, copy, save, recapture, close,
+    pen, pixelate, translate, pin_image, copy_analysis_result, none
+};
 
 // 作用：覆盖所有显示器显示冻结画面、暗色遮罩和可拖动截图选区。
 // 参数：无。返回：无；快照由调用方持有，窗口关闭前调用方需保证其有效。
@@ -39,6 +42,9 @@ public:
     // 作用：取得当前展示的大模型分析结果，供用户点击复制按钮时读取。
     // 参数：无。返回：完整结果文本；尚无结果时为空字符串。
     [[nodiscard]] const std::wstring& analysis_result() const { return result_panel_.content(); }
+    // 作用：取得本次选区内的标注与马赛克数据。参数：无。
+    // 返回：编辑数据借用引用，在隐藏或重新截取后失效。
+    [[nodiscard]] const platform::ScreenshotEdits& edits() const { return edits_; }
     // 作用：通知应用层执行截图操作。参数：action 为请求操作；selection 为屏幕坐标选区。
     // 返回：无；空回调时不执行操作。
     std::function<void(ScreenshotAction, RECT)> on_action;
@@ -50,7 +56,8 @@ protected:
 
 private:
     // 作用：记录鼠标当前操作选区的方式。参数：无。返回：无。
-    enum class DragMode { none, create, move, resize };
+    enum class DragMode { none, create, move, resize, draw_pen, draw_pixelate };
+    enum class EditTool { none, pen, pixelate };
 
     // 作用：标记本次拉伸需要随鼠标移动的选区边缘。
     // 参数：无。返回：无；多个边缘可按位组合以支持角点拉伸。
@@ -95,7 +102,7 @@ private:
     // 参数：无。返回：无；窗口显示位置会限制在当前虚拟桌面边界内。
     void LayoutResultPanel();
     // 作用：在指定操作栏局部点命中操作按钮。参数：point 为客户区坐标。
-    // 返回：命中操作；未命中时为 close（调用方会单独验证操作栏范围）。
+    // 返回：命中操作；按钮间隙或空白处为 none。
     [[nodiscard]] ScreenshotAction HitAction(POINT point) const;
     // 作用：根据动作通知应用层并保持窗口生命周期由应用管理。
     // 参数：action 为请求操作。返回：无。
@@ -117,6 +124,10 @@ private:
     bool analysis_pending_ = false;
     bool analysis_result_visible_ = false;
     bool visible_ = false;
+    EditTool edit_tool_ = EditTool::none;
+    platform::ScreenshotEdits edits_;
+    POINT edit_start_{};
+    POINT edit_current_{};
     ResultPanelWindow result_panel_;
 };
 

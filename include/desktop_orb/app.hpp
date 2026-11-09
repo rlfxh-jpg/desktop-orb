@@ -3,16 +3,21 @@
 // 文件职责：协调悬浮球、环绕菜单和窗口切换面板的状态与生命周期。
 // 平台枚举、图片解码和具体绘制由各自模块负责。
 #include "desktop_orb/platform/common/settings.hpp"
+#include "desktop_orb/platform/clipboard/clipboard_history.hpp"
 #include "desktop_orb/platform/screenshot/screenshot_ai_client.hpp"
 #include "desktop_orb/platform/screenshot/screenshot_service.hpp"
 #include "desktop_orb/platform/window_switcher/window_catalog.hpp"
 #include "desktop_orb/ui/common/feature_menu.hpp"
+#include "desktop_orb/ui/clipboard/clipboard_panel.hpp"
 #include "desktop_orb/ui/app_launcher/app_list_panel.hpp"
 #include "desktop_orb/ui/desktop_fence/fence_panel.hpp"
 #include "desktop_orb/ui/common/orb_window.hpp"
 #include "desktop_orb/ui/screenshot/selection_window.hpp"
+#include "desktop_orb/ui/screenshot/pinned_image_window.hpp"
 #include "desktop_orb/ui/window_switcher/switcher_panel.hpp"
 #include <future>
+#include <memory>
+#include <vector>
 
 namespace desktop_orb {
 
@@ -38,16 +43,18 @@ private:
     // 作用：在悬浮球所在显示器同侧打开可搜索的已安装应用列表。
     // 参数：无。返回：无；面板打开时隐藏悬浮球。
     void OpenAppList();
+    // 作用：打开可搜索和置顶的进程内剪贴板历史。参数：无。返回：无。
+    void OpenClipboardHistory();
     // 作用：在悬浮球所在显示器打开桌面围栏项目面板。
     // 参数：无。返回：无；打开面板时隐藏悬浮球，关闭后由回调恢复。
     void OpenDesktopFence();
     // 作用：暂时隐藏悬浮球，捕获虚拟桌面并打开截图选区界面。
     // 参数：无。返回：无；采集或界面创建失败时恢复悬浮球并显示错误信息。
     void CaptureScreenshot();
-    // 作用：处理选区窗口提交的文字提取、截图总结、复制、保存、重新截取或关闭操作。
+    // 作用：处理选区窗口提交的分析、编辑后输出、贴图或关闭操作。
     // 参数：action 为用户操作；selection 为屏幕坐标选区。返回：无。
     void HandleScreenshotAction(ui::ScreenshotAction action, RECT selection);
-    // 作用：在后台启动一次截图文字提取或内容总结。
+    // 作用：在后台启动一次截图文字提取、内容总结或翻译。
     // 参数：selection 为屏幕坐标选区；task 为分析类型。返回：无；失败时显示错误并保留选区。
     void StartScreenshotAnalysis(RECT selection, platform::ScreenshotAiTask task);
     // 作用：轮询后台分析并在 UI 线程处理完成结果。参数：无。返回：无。
@@ -69,12 +76,15 @@ private:
     platform::ScreenshotAiConfig screenshot_ai_config_;
     platform::WindowCatalog catalog_;
     platform::ScreenshotService screenshot_service_;
+    platform::ClipboardHistory clipboard_history_;
     ui::OrbWindow orb_;
     ui::FeatureMenu menu_;
     ui::SwitcherPanel panel_;
     ui::AppListPanel app_list_panel_;
+    ui::ClipboardPanel clipboard_panel_;
     ui::FencePanel fence_panel_;
     ui::SelectionWindow screenshot_window_;
+    std::vector<std::unique_ptr<ui::PinnedImageWindow>> pinned_images_;
     std::future<platform::ScreenshotAiResult> screenshot_ai_future_;
     platform::ScreenshotAiTask screenshot_ai_task_ = platform::ScreenshotAiTask::extract_text;
     bool screenshot_ai_pending_ = false;

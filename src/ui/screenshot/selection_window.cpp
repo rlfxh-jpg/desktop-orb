@@ -13,13 +13,15 @@
 namespace desktop_orb::ui {
 namespace {
 
-constexpr int kToolbarHeight = 42;
+constexpr int kToolbarRowHeight = 42;
+constexpr int kToolbarHeight = kToolbarRowHeight * 2;
 constexpr int kToolbarButtonWidth = 76;
 constexpr int kToolbarGap = 5;
 constexpr int kToolbarPadding = 6;
-constexpr int kToolbarButtonCount = 6;
-constexpr int kToolbarWidth = kToolbarPadding * 2 + kToolbarButtonWidth * kToolbarButtonCount +
-                              kToolbarGap * (kToolbarButtonCount - 1);
+constexpr int kToolbarColumns = 6;
+constexpr int kToolbarButtonCount = 10;
+constexpr int kToolbarWidth = kToolbarPadding * 2 + kToolbarButtonWidth * kToolbarColumns +
+                              kToolbarGap * (kToolbarColumns - 1);
 constexpr int kResultsWidth = 520;
 constexpr int kResultsHeight = 260;
 constexpr int kSelectionBorderWidth = 3;
@@ -88,6 +90,8 @@ bool SelectionWindow::ShowFor(platform::ScreenshotService& snapshot) {
     drag_mode_ = DragMode::none;
     toolbar_pressed_ = false;
     selected_ = false;
+    edits_ = {};
+    edit_tool_ = EditTool::none;
     analysis_pending_ = false;
     analysis_result_visible_ = false;
     result_panel_.SetContent(L"", L"");
@@ -170,6 +174,8 @@ void SelectionWindow::Hide() {
     drag_mode_ = DragMode::none;
     toolbar_pressed_ = false;
     selected_ = false;
+    edits_ = {};
+    edit_tool_ = EditTool::none;
     analysis_pending_ = false;
     analysis_result_visible_ = false;
     result_panel_.Hide();
@@ -249,6 +255,12 @@ void SelectionWindow::UpdateCursor(POINT client_point) const {
         SetCursor(LoadCursorW(nullptr, IDC_ARROW));
         return;
     }
+    const POINT edit_point = ScreenPoint(client_point);
+    if (selected_ && HitResizeEdges(edit_point) == 0 &&
+        PtInRect(&selection_, edit_point) && edit_tool_ != EditTool::none) {
+        SetCursor(LoadCursorW(nullptr, IDC_CROSS));
+        return;
+    }
     if (drag_mode_ == DragMode::create) {
         SetCursor(LoadCursorW(nullptr, IDC_SIZENWSE));
         return;
@@ -283,6 +295,7 @@ void SelectionWindow::UpdateCursor(POINT client_point) const {
 void SelectionWindow::UpdateDrag(POINT client_point) {
     const POINT current = ScreenPoint(client_point);
     const RECT desktop = snapshot_->bounds();
+    const RECT previous_selection = selection_;
     if (drag_mode_ == DragMode::create) {
         selection_ = {std::min(drag_start_point_.x, current.x),
                       std::min(drag_start_point_.y, current.y),
@@ -320,6 +333,13 @@ void SelectionWindow::UpdateDrag(POINT client_point) {
             selection_.bottom = std::clamp<LONG>(current.y, selection_.top + 2,
                                                  desktop.bottom);
         }
+        // 核心逻辑：编辑坐标相对选区左上角；拉伸左边或上边时平移编辑坐标，
+        // 让标注继续覆盖其原来的屏幕像素位置。
+        const int shift_x = previous_selection.left - selection_.left;
+        const int shift_y = previous_selection.top - selection_.top;
+        for (auto& stroke : edits_.strokes)
+            for (auto& point : stroke.points) { point.x += shift_x; point.y += shift_y; }
+        for (auto& area : edits_.pixelated_areas) OffsetRect(&area, shift_x, shift_y);
     }
     if (analysis_result_visible_) {
         // 核心逻辑：选区移动期间隐藏结果面板，并在每次鼠标移动后重新等待一秒。
@@ -415,13 +435,23 @@ ScreenshotAction SelectionWindow::HitAction(POINT point) const {
     const int gap = platform::Scale(kToolbarGap, dpi);
     const int offset = point.x - bar.left - pad;
     const int stride = button + gap;
-    const int index = offset / stride;
-    if (offset < 0 || index < 0 || index >= kToolbarButtonCount || offset % stride >= button)
-        return ScreenshotAction::close;
+    const int column = offset / stride;
+    const int row = (point.y - bar.top) / platform::Scale(kToolbarRowHeight, dpi);
+    const int index = row * kToolbarColumns + column;
+    if (offset < 0 || row < 0 || row > 1 || column < 0 || column >= kToolbarColumns ||
+        index >= kToolbarButtonCount || offset % stride >= button)
+        return ScreenshotAction::none;
     return static_cast<ScreenshotAction>(index);
 }
 
 void SelectionWindow::Dispatch(ScreenshotAction action) {
+    if (action == ScreenshotAction::none) return;
+    if (action == ScreenshotAction::pen || action == ScreenshotAction::pixelate) {
+        const EditTool requested = action == ScreenshotAction::pen ? EditTool::pen : EditTool::pixelate;
+        edit_tool_ = edit_tool_ == requested ? EditTool::none : requested;
+        InvalidateRect(handle(), nullptr, FALSE);
+        return;
+    }
     if (on_action) on_action(action, Selection());
 }
 
@@ -484,6 +514,23 @@ void SelectionWindow::DrawFrame(HDC dc) {
     }
     if (source) DeleteDC(source);
 
+    if (selected_ && (!edits_.strokes.empty() || !edits_.pixelated_areas.empty())) {
+        const int saved = SaveDC(dc);
+        const RECT region = ToClient(Selection(), origin);
+        IntersectClipRect(dc, region.left, region.top, region.right, region.bottom);
+        SetViewportOrgEx(dc, region.left, region.top, nullptr);
+        platform::ApplyScreenshotEdits(dc, region.right - region.left,
+            region.bottom - region.top, edits_);
+        if (saved) RestoreDC(dc, saved);
+    }
+    if (drag_mode_ == DragMode::draw_pixelate) {
+        const RECT area{std::min(edit_start_.x, edit_current_.x),
+            std::min(edit_start_.y, edit_current_.y),
+            std::max(edit_start_.x, edit_current_.x),
+            std::max(edit_start_.y, edit_current_.y)};
+        DrawSelectionBorder(dc, ToClient(area, origin));
+    }
+
     const RECT selection = ToClient(Selection(), origin);
     if (drag_mode_ != DragMode::none || selected_) {
         SetBkMode(dc, TRANSPARENT);
@@ -513,18 +560,26 @@ void SelectionWindow::DrawFrame(HDC dc) {
     if (selected_) {
         const RECT bar = ToClient(ToolbarBounds(), origin);
         Fill(dc, bar, Color(29, 39, 42));
-        const wchar_t* labels[] = {L"提取文字", L"总结截图", L"复制", L"保存", L"重新截取", L"关闭"};
+        const wchar_t* labels[] = {L"提取文字", L"总结截图", L"复制", L"保存", L"重新截取", L"关闭",
+            L"画笔", L"马赛克", L"翻译文字", L"贴到桌面"};
         const UINT dpi = GetDpiForWindow(handle());
         const int pad = platform::Scale(kToolbarPadding, dpi);
         const int button = platform::Scale(kToolbarButtonWidth, dpi);
-        const int height = platform::Scale(kToolbarHeight, dpi);
+        const int row_height = platform::Scale(kToolbarRowHeight, dpi);
         const int gap = platform::Scale(kToolbarGap, dpi);
         for (int index = 0; index < kToolbarButtonCount; ++index) {
-            RECT item{bar.left + pad + index * (button + gap), bar.top + platform::Scale(5, dpi),
-                      bar.left + pad + index * (button + gap) + button, bar.top + height - platform::Scale(5, dpi)};
-            const bool analysis_disabled = analysis_pending_ && index < 2;
+            const int row = index / kToolbarColumns;
+            const int column = index % kToolbarColumns;
+            RECT item{bar.left + pad + column * (button + gap),
+                bar.top + row * row_height + platform::Scale(5, dpi),
+                bar.left + pad + column * (button + gap) + button,
+                bar.top + (row + 1) * row_height - platform::Scale(5, dpi)};
+            const bool analysis_disabled = analysis_pending_ && (index < 2 || index == 8);
             const COLORREF background = analysis_disabled ? Color(77, 84, 86)
-                : (index == kToolbarButtonCount - 1 ? Color(67, 76, 79) : Color(44, 135, 119));
+                : (index == 5 ? Color(67, 76, 79)
+                    : ((index == 6 && edit_tool_ == EditTool::pen) ||
+                       (index == 7 && edit_tool_ == EditTool::pixelate)
+                        ? Color(36, 108, 192) : Color(44, 135, 119)));
             Fill(dc, item, background);
             const wchar_t* label = analysis_disabled ? L"处理中" : labels[index];
             Text(dc, label, item, platform::Scale(12, dpi), Color(255, 255, 255), FW_SEMIBOLD,
@@ -560,6 +615,22 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 return 0;
             }
 
+            if (selected_ && edit_tool_ != EditTool::none &&
+                HitResizeEdges(screen_point) == 0 && PtInRect(&selection_, screen_point)) {
+                // 核心逻辑：编辑模式仅修改既有选区，不把笔迹手势误判为移动选区。
+                edit_start_ = screen_point;
+                edit_current_ = screen_point;
+                drag_mode_ = edit_tool_ == EditTool::pen
+                    ? DragMode::draw_pen : DragMode::draw_pixelate;
+                if (drag_mode_ == DragMode::draw_pen)
+                    edits_.strokes.push_back({{{screen_point.x - selection_.left,
+                        screen_point.y - selection_.top}}});
+                result_panel_.Hide();
+                SetCapture(handle());
+                UpdateCursor(point);
+                return 0;
+            }
+
             drag_start_point_ = screen_point;
             if (selected_) {
                 resize_edges_ = HitResizeEdges(screen_point);
@@ -571,6 +642,8 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                     drag_start_selection_ = selection_;
                 } else {
                     selected_ = false;
+                    edits_ = {};
+                    edit_tool_ = EditTool::none;
                     resize_edges_ = 0;
                     analysis_result_visible_ = false;
                     result_panel_.SetContent(L"", L"");
@@ -592,7 +665,15 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             return 0;
         }
         case WM_MOUSEMOVE:
-            if (drag_mode_ != DragMode::none) {
+            if (drag_mode_ == DragMode::draw_pen || drag_mode_ == DragMode::draw_pixelate) {
+                const POINT raw = ScreenPoint({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+                edit_current_ = {std::clamp<LONG>(raw.x, selection_.left, selection_.right - 1),
+                    std::clamp<LONG>(raw.y, selection_.top, selection_.bottom - 1)};
+                if (drag_mode_ == DragMode::draw_pen && !edits_.strokes.empty())
+                    edits_.strokes.back().points.push_back({edit_current_.x - selection_.left,
+                        edit_current_.y - selection_.top});
+                InvalidateRect(handle(), nullptr, FALSE);
+            } else if (drag_mode_ != DragMode::none) {
                 UpdateDrag({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
                 InvalidateRect(handle(), nullptr, FALSE);
             }
@@ -606,6 +687,23 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 const RECT toolbar = ToClient(ToolbarBounds(), {desktop.left, desktop.top});
                 const POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
                 if (PtInRect(&toolbar, point)) Dispatch(HitAction(point));
+                return 0;
+            }
+            if (drag_mode_ == DragMode::draw_pen || drag_mode_ == DragMode::draw_pixelate) {
+                const POINT raw = ScreenPoint({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+                edit_current_ = {std::clamp<LONG>(raw.x, selection_.left, selection_.right - 1),
+                    std::clamp<LONG>(raw.y, selection_.top, selection_.bottom - 1)};
+                if (drag_mode_ == DragMode::draw_pixelate) {
+                    RECT area{std::min(edit_start_.x, edit_current_.x) - selection_.left,
+                        std::min(edit_start_.y, edit_current_.y) - selection_.top,
+                        std::max(edit_start_.x, edit_current_.x) - selection_.left + 1,
+                        std::max(edit_start_.y, edit_current_.y) - selection_.top + 1};
+                    if (area.right - area.left >= 2 && area.bottom - area.top >= 2)
+                        edits_.pixelated_areas.push_back(area);
+                }
+                drag_mode_ = DragMode::none;
+                ReleaseCapture();
+                InvalidateRect(handle(), nullptr, FALSE);
                 return 0;
             }
             if (drag_mode_ != DragMode::none) {

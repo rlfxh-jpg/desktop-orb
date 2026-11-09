@@ -38,7 +38,8 @@ Only one instance runs across Windows login sessions. Launching the executable a
 - Click the ball to show its feature menu; drag it to another edge or monitor. Feature icons form a compact arc that expands as more features are added.
 - Click the window switcher icon to open the live window list on the same edge as the ball. Its small transparent button grows while hovered; after 3 seconds, its name appears. The ball hides while the list is open and returns when it closes.
 - Click **所有应用** to browse executable apps grouped as desktop programs and packaged apps on the same edge. Help files and web links are excluded; architecture variants in one install directory share a single default entry. Search by app name, scroll the list, then click an app to launch it. Press `Esc` or click outside to close the list. Icons load in the background.
-- Click the screenshot icon, then drag across the frozen desktop to select an area. The live selection size is shown in pixels. Choose **提取文字**, **总结截图**, **复制**, **保存**, **重新截取**, or **关闭** from the toolbar. AI results appear below the toolbar in a selectable, scrollable panel; click **复制结果** or select text and press `Ctrl+C`. Saving opens a folder picker. `Esc` closes the selection, and `Enter` copies the selected screenshot.
+- Click the screenshot icon, then drag across the frozen desktop to select an area. The live selection size is shown in pixels. Use **画笔** to draw red marks or **马赛克** to pixelate a dragged rectangle; click the active tool again to leave edit mode. The toolbar also offers **提取文字**, **总结截图**, **翻译文字**, **复制**, **保存**, **重新截取**, **贴到桌面**, and **关闭**. AI results appear in a selectable, scrollable panel. Saving opens a folder picker and adds the finished image to clipboard history without changing the current clipboard. A pinned image stays on top, can be dragged, and closes with a right click. `Esc` closes the selection, and `Enter` copies it.
+- Click **剪贴板历史** to search recently copied text and images. Click a row to copy it again, or click its star to keep it at the top. Screenshots copied or saved from the toolbar appear here. History is kept in memory until the app exits; up to 80 entries are retained.
 - Click **桌面围栏** to show four separate translucent desktop panels for programs, folders, documents and other files from the user and public desktops. Each panel draws its own icon grid and overlay scrollbar; use the wheel or drag the scrollbar to browse. Double-click an item to open it, or drag its title to move the panel. Panels stay open when focus moves elsewhere; click the floating ball or press `Esc` to close them. Contents refresh every 2.5 seconds without modifying original files.
 - Scroll the list, then click a window to activate it. `Esc` closes the menu or list.
 - The default global shortcut is `Ctrl+Alt+Space`.
@@ -54,7 +55,9 @@ Change `Hotkey` in the same `settings.ini` to a combination such as `Ctrl+Shift+
 - `platform/app_launcher`: installed app discovery and launch through Windows AppsFolder.
 - `platform/desktop_fence`: desktop and public desktop item discovery, type classification and Shell open requests.
 - `platform/screenshot`: virtual desktop capture, PNG output, clipboard integration and the native C++ WinHTTP vision client.
+- `platform/clipboard`: bounded text and image clipboard history.
 - `ui/screenshot`: full virtual desktop selection overlay, size feedback and post-capture actions.
+- `ui/clipboard`: searchable clipboard history panel.
 - `ui/common`: floating orb, shared window lifecycle, drawing, icon loading and feature menu.
 - `ui/window_switcher`: the window switcher panel and its interactions.
 - `ui/app_launcher`: searchable installed app list.

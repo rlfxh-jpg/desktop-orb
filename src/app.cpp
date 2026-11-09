@@ -114,6 +114,7 @@ bool CopyTextToClipboard(HWND owner, const std::wstring& text) {
 App::App() : panel_(catalog_) {}
 
 App::~App() {
+    if (orb_.handle()) RemoveClipboardFormatListener(orb_.handle());
     // 核心逻辑：正常退出和初始化中途失败时，先撤销围栏对 Explorer 图标窗口的隐藏。
     // 外部强制终止进程不会执行析构，此时由独立的桌面图标保护进程兜底恢复。
     fence_panel_.Hide();
@@ -129,6 +130,7 @@ bool App::Initialize() {
     const POINT initial = settings_.orb_position.value_or(POINT{
         primary.work.right - 58, primary.work.top + (primary.work.bottom - primary.work.top) / 3});
     if (!orb_.Create(initial) || !panel_.Create() || !app_list_panel_.Create() ||
+        !clipboard_panel_.Create() ||
         !fence_panel_.Create() ||
         !screenshot_window_.Create()) return false;
     orb_.SnapToEdge();
@@ -136,10 +138,12 @@ bool App::Initialize() {
     if (!menu_.Add(L"截图", L"screenshot.png", [this] { CaptureScreenshot(); })) return false;
     if (!menu_.Add(L"桌面围栏", L"desktop_fence.png", [this] { OpenDesktopFence(); })) return false;
     if (!menu_.Add(L"所有应用", L"all_apps.png", [this] { OpenAppList(); })) return false;
+    if (!menu_.Add(L"剪贴板历史", L"clipboard_history.png", [this] { OpenClipboardHistory(); })) return false;
     auto excluded = menu_.Handles();
     excluded.push_back(orb_.handle());
     excluded.push_back(panel_.handle());
     excluded.push_back(app_list_panel_.handle());
+    excluded.push_back(clipboard_panel_.handle());
     for (HWND handle : fence_panel_.Handles()) excluded.push_back(handle);
     panel_.SetExcluded(std::move(excluded));
     screenshot_window_.on_action = [this](ui::ScreenshotAction action, RECT selection) {
@@ -149,6 +153,9 @@ bool App::Initialize() {
         ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
     };
     app_list_panel_.on_closed = [this] {
+        ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
+    };
+    clipboard_panel_.on_closed = [this] {
         ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
     };
     fence_panel_.on_closed = [this] {
@@ -163,6 +170,11 @@ bool App::Initialize() {
     orb_.on_tick = [this] { Tick(); };
     orb_.on_hotkey = [this] { ToggleMenu(); };
     orb_.on_context = [this] { ShowContextMenu(); };
+    orb_.on_clipboard_changed = [this] {
+        if (clipboard_history_.Capture()) clipboard_panel_.Refresh();
+    };
+    if (!AddClipboardFormatListener(orb_.handle())) return false;
+    clipboard_history_.Capture();
 
     if (!settings_store_.Save(settings_))
         Warn(orb_.handle(), L"设置保存失败", L"无法写入设置文件，悬浮球位置可能无法保留。");
@@ -200,15 +212,18 @@ void App::Tick() {
                             orb_bounds.right + 28, orb_bounds.bottom + 28};
     orb_.SetAlpha(Contains(hover_bounds, cursor) || menu_.visible() || panel_.visible() ||
                   app_list_panel_.visible() ||
+                  clipboard_panel_.visible() ||
                   fence_panel_.visible() ? 255 : 125);
 
     const bool left_down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
     if (left_down && !previous_left_down_ &&
-        (menu_.visible() || panel_.visible() || app_list_panel_.visible())) {
+        (menu_.visible() || panel_.visible() || app_list_panel_.visible() || clipboard_panel_.visible())) {
         bool inside = Contains(orb_bounds, cursor);
         if (panel_.visible()) inside = inside || Contains(Bounds(panel_.handle()), cursor);
         if (app_list_panel_.visible())
             inside = inside || Contains(Bounds(app_list_panel_.handle()), cursor);
+        if (clipboard_panel_.visible())
+            inside = inside || Contains(Bounds(clipboard_panel_.handle()), cursor);
         if (menu_.visible()) {
             for (HWND button : menu_.Handles()) inside = inside || Contains(Bounds(button), cursor);
         }
@@ -225,6 +240,8 @@ void App::Tick() {
         else CloseOverlays();
     }
     previous_escape_down_ = escape_down;
+    // 核心逻辑：右键回调只标记贴图关闭；在定时器栈上销毁窗口对象，避免回调期间释放自身。
+    std::erase_if(pinned_images_, [](const auto& image) { return image->closed(); });
     PollScreenshotAnalysis();
 }
 
@@ -233,6 +250,7 @@ void App::ToggleMenu() {
     if (menu_.visible()) { menu_.Hide(); return; }
     panel_.Hide();
     app_list_panel_.Hide();
+    clipboard_panel_.Hide();
     const RECT bounds = orb_.Bounds();
     const POINT center{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
     menu_.ShowAround(bounds, platform::MonitorAt(center), GetDpiForWindow(orb_.handle()));
@@ -241,6 +259,7 @@ void App::ToggleMenu() {
 void App::OpenSwitcher() {
     menu_.Hide();
     app_list_panel_.Hide();
+    clipboard_panel_.Hide();
     fence_panel_.Hide();
     const RECT bounds = orb_.Bounds();
     const POINT center{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
@@ -256,6 +275,7 @@ void App::OpenSwitcher() {
 void App::OpenAppList() {
     menu_.Hide();
     panel_.Hide();
+    clipboard_panel_.Hide();
     fence_panel_.Hide();
     const RECT bounds = orb_.Bounds();
     const POINT center{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
@@ -266,10 +286,27 @@ void App::OpenAppList() {
     if (app_list_panel_.visible()) ShowWindow(orb_.handle(), SW_HIDE);
 }
 
+// 作用：打开悬浮球同侧的文字与图片剪贴板历史。
+// 参数：无。返回：无；面板显示后隐藏悬浮球。
+void App::OpenClipboardHistory() {
+    menu_.Hide();
+    panel_.Hide();
+    app_list_panel_.Hide();
+    fence_panel_.Hide();
+    const RECT bounds = orb_.Bounds();
+    const POINT center{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
+    const auto monitor = platform::MonitorAt(center);
+    const auto edge = center.x < (monitor.work.left + monitor.work.right) / 2
+        ? ui::ClipboardPanel::Edge::left : ui::ClipboardPanel::Edge::right;
+    clipboard_panel_.ShowFor(clipboard_history_, monitor, edge);
+    if (clipboard_panel_.visible()) ShowWindow(orb_.handle(), SW_HIDE);
+}
+
 void App::OpenDesktopFence() {
     menu_.Hide();
     panel_.Hide();
     app_list_panel_.Hide();
+    clipboard_panel_.Hide();
     if (fence_panel_.visible()) {
         fence_panel_.Hide();
         return;
@@ -291,6 +328,7 @@ void App::CaptureScreenshot() {
     menu_.Hide();
     panel_.Hide();
     app_list_panel_.Hide();
+    clipboard_panel_.Hide();
     // 核心逻辑：围栏是持续显示的桌面功能，截图不改变其开关状态；
     // 用户若在桌面上截取围栏，快照也应保留当前可见内容。
     ShowWindow(orb_.handle(), SW_HIDE);
@@ -321,6 +359,31 @@ void App::HandleScreenshotAction(ui::ScreenshotAction action, RECT selection) {
         case ui::ScreenshotAction::summarize:
             StartScreenshotAnalysis(selection, platform::ScreenshotAiTask::summarize);
             return;
+        case ui::ScreenshotAction::translate:
+            StartScreenshotAnalysis(selection, platform::ScreenshotAiTask::translate);
+            return;
+        case ui::ScreenshotAction::pen:
+        case ui::ScreenshotAction::pixelate:
+            return;
+        case ui::ScreenshotAction::pin_image: {
+            std::wstring error;
+            HBITMAP bitmap = screenshot_service_.CreateSelectionBitmap(
+                selection, &screenshot_window_.edits(), error);
+            if (!bitmap) {
+                Warn(screenshot_window_.handle(), L"贴图失败", error.c_str());
+                return;
+            }
+            auto image = std::make_unique<ui::PinnedImageWindow>();
+            if (!image->Create(bitmap, {selection.left, selection.top})) {
+                Warn(screenshot_window_.handle(), L"贴图失败", L"无法创建桌面贴图窗口。");
+                return;
+            }
+            pinned_images_.push_back(std::move(image));
+            screenshot_window_.Hide();
+            screenshot_service_.Reset();
+            ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
+            return;
+        }
         case ui::ScreenshotAction::recapture:
             screenshot_window_.Hide();
             CaptureScreenshot();
@@ -331,11 +394,12 @@ void App::HandleScreenshotAction(ui::ScreenshotAction action, RECT selection) {
             ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
             return;
         case ui::ScreenshotAction::copy: {
-            const auto result = screenshot_service_.CopySelection(selection);
+            const auto result = screenshot_service_.CopySelection(selection, &screenshot_window_.edits());
             if (!result.copied_to_clipboard) {
                 Warn(screenshot_window_.handle(), L"复制失败", result.error.c_str());
                 return;
             }
+            if (clipboard_history_.Capture()) clipboard_panel_.Refresh();
             screenshot_window_.Hide();
             screenshot_service_.Reset();
             ShowWindow(orb_.handle(), SW_SHOWNOACTIVATE);
@@ -349,10 +413,23 @@ void App::HandleScreenshotAction(ui::ScreenshotAction action, RECT selection) {
                     Warn(screenshot_window_.handle(), L"选择文件夹失败", L"无法打开文件夹选择窗口。");
                 return;
             }
-            const auto result = screenshot_service_.SaveSelection(selection, directory);
+            const auto result = screenshot_service_.SaveSelection(
+                selection, directory, &screenshot_window_.edits());
             if (!result.saved) {
                 Warn(screenshot_window_.handle(), L"保存失败", result.error.c_str());
                 return;
+            }
+            // 核心逻辑：保存文件也直接进入历史，不覆盖用户此前复制的剪贴板内容。
+            std::wstring history_error;
+            HBITMAP history_bitmap = screenshot_service_.CreateSelectionBitmap(
+                selection, &screenshot_window_.edits(), history_error);
+            if (history_bitmap) {
+                if (clipboard_history_.AddBitmap(history_bitmap)) clipboard_panel_.Refresh();
+                else Warn(screenshot_window_.handle(), L"历史记录失败",
+                    L"截图已保存，但图片过大或系统资源不足，未加入剪贴板历史。");
+                DeleteObject(history_bitmap);
+            } else {
+                Warn(screenshot_window_.handle(), L"历史记录失败", history_error.c_str());
             }
             screenshot_window_.Hide();
             screenshot_service_.Reset();
@@ -367,7 +444,8 @@ void App::StartScreenshotAnalysis(RECT selection, platform::ScreenshotAiTask tas
 
     std::vector<std::uint8_t> image_png;
     std::wstring error;
-    if (!screenshot_service_.EncodeSelectionPng(selection, image_png, error)) {
+    if (!screenshot_service_.EncodeSelectionPng(
+            selection, image_png, error, &screenshot_window_.edits())) {
         Warn(screenshot_window_.handle(), L"截图分析失败", error.c_str());
         return;
     }
@@ -414,7 +492,8 @@ void App::PollScreenshotAnalysis() {
         return;
     }
     const wchar_t* title = screenshot_ai_task_ == platform::ScreenshotAiTask::extract_text
-        ? L"截图文字提取结果" : L"截图内容总结";
+        ? L"截图文字提取结果" : screenshot_ai_task_ == platform::ScreenshotAiTask::translate
+        ? L"截图文字翻译结果" : L"截图内容总结";
     screenshot_window_.SetAnalysisResult(title, std::move(result.text));
 }
 
@@ -422,6 +501,7 @@ void App::CloseOverlays() {
     menu_.Hide();
     panel_.Hide();
     app_list_panel_.Hide();
+    clipboard_panel_.Hide();
     fence_panel_.Hide();
 }
 

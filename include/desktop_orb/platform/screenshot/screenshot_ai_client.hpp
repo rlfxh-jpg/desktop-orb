@@ -10,7 +10,7 @@ namespace desktop_orb::platform {
 
 // 作用：选择截图视觉分析任务。
 // 参数：无。返回：无。
-enum class ScreenshotAiTask { extract_text, summarize };
+enum class ScreenshotAiTask { extract_text, summarize, translate };
 
 // 作用：承载一次截图视觉分析的结果或错误。
 // 参数：无。返回：无；succeeded 为 false 时应读取 error。
@@ -29,7 +29,7 @@ struct ScreenshotAiConfig {
 };
 
 // 作用：通过 WinHTTP 调用 OpenAI 兼容的视觉聊天接口分析 PNG 截图。
-// 参数：image_png 为完整 PNG 字节；task 为文字提取或截图总结；config 为密钥、接口地址和模型配置。
+// 参数：image_png 为完整 PNG 字节；task 为文字提取、总结或翻译；config 为密钥、接口地址和模型配置。
 // 返回：分析文本或可显示的错误信息；调用会阻塞当前线程，应放在后台线程执行。
 [[nodiscard]] ScreenshotAiResult AnalyzeScreenshot(
     const std::vector<std::uint8_t>& image_png, ScreenshotAiTask task,

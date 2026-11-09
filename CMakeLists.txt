@@ -19,7 +19,9 @@ add_executable(desktop-orb WIN32
     src/platform/window_switcher/window_catalog.cpp
     src/platform/window_switcher/thumbnail_manager.cpp
     src/platform/screenshot/screenshot_service.cpp
+    src/platform/screenshot/screenshot_edits.cpp
     src/platform/screenshot/screenshot_ai_client.cpp
+    src/platform/clipboard/clipboard_history.cpp
     src/ui/common/window_base.cpp
     src/ui/common/drawing.cpp
     src/ui/common/icon_image.cpp
@@ -28,12 +30,14 @@ add_executable(desktop-orb WIN32
     src/ui/common/feature_layout.cpp
     src/ui/common/feature_menu.cpp
     src/ui/app_launcher/app_list_panel.cpp
+    src/ui/clipboard/clipboard_panel.cpp
     src/ui/desktop_fence/fence_panel.cpp
     src/ui/desktop_fence/fence_card.cpp
     src/ui/desktop_fence/fence_card_content.cpp
     src/ui/desktop_fence/fence_card_renderer.cpp
     src/ui/window_switcher/switcher_panel.cpp
     src/ui/screenshot/selection_window.cpp
+    src/ui/screenshot/pinned_image_window.cpp
     src/ui/screenshot/result_panel_window.cpp
 )
 
@@ -58,6 +62,32 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(clipboard-history-test
+        tests/clipboard_history_test.cpp
+        src/platform/clipboard/clipboard_history.cpp
+    )
+    target_include_directories(clipboard-history-test PRIVATE include)
+    target_compile_features(clipboard-history-test PRIVATE cxx_std_20)
+    target_compile_definitions(clipboard-history-test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(clipboard-history-test PRIVATE user32 gdi32)
+    if(MSVC)
+        target_compile_options(clipboard-history-test PRIVATE /W4 /permissive- /utf-8)
+    endif()
+    add_test(NAME clipboard-history COMMAND clipboard-history-test)
+
+    add_executable(screenshot-edits-test
+        tests/screenshot_edits_test.cpp
+        src/platform/screenshot/screenshot_edits.cpp
+    )
+    target_include_directories(screenshot-edits-test PRIVATE include)
+    target_compile_features(screenshot-edits-test PRIVATE cxx_std_20)
+    target_compile_definitions(screenshot-edits-test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(screenshot-edits-test PRIVATE user32 gdi32)
+    if(MSVC)
+        target_compile_options(screenshot-edits-test PRIVATE /W4 /permissive- /utf-8)
+    endif()
+    add_test(NAME screenshot-edits COMMAND screenshot-edits-test)
+
     add_executable(app-entry-rules-test
         tests/app_entry_rules_test.cpp
         src/platform/app_launcher/app_entry_rules.cpp
