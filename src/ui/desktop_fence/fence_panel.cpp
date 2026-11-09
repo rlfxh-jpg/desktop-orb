@@ -84,7 +84,11 @@ void FencePanel::ShowFor(const platform::Monitor& monitor, bool align_right) {
 // 作用：隐藏卡片并通知应用层恢复悬浮球。
 // 参数：无。返回：无；卡片原本隐藏时不重复通知。
 void FencePanel::Hide() {
-    if (!visible_) return;
+    if (!visible_) {
+        // 核心逻辑：即使显示状态已重置，仍允许恢复此前保存的 Explorer 图标可见状态。
+        desktop_icon_visibility_.Restore();
+        return;
+    }
     visible_ = false;
     for (const auto& card : cards_) {
         if (card) card->Hide();

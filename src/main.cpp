@@ -2,12 +2,17 @@
 // 启动阶段的错误通过对话框反馈，因为 GUI 程序没有附加控制台。
 #include "desktop_orb/app.hpp"
 #include "desktop_orb/platform/common/single_instance.hpp"
+#include "desktop_orb/platform/desktop_fence/desktop_icon_visibility.hpp"
+#include <cwchar>
 
 // 作用：启动桌面悬浮球并进入 Win32 消息循环。
-// 参数：四个 WinMain 参数由 Windows 提供，本程序当前不使用其值。
+// 参数：command_line 为 Windows 提供的命令行参数；其他 WinMain 参数当前不使用。
 // 返回：正常退出时为消息循环退出码，单实例检查或初始化失败时为 1；
 //       已有实例运行时返回 0，不再创建第二个悬浮球。
-int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR command_line, int) {
+    // 核心逻辑：图标保护进程不创建悬浮球，也不参与单实例互斥锁竞争。
+    if (command_line && std::wcsncmp(command_line, L"--desktop-icon-guard ", 21) == 0)
+        return desktop_orb::platform::RunDesktopIconGuard();
     desktop_orb::platform::SingleInstance instance;
     if (instance.result() == desktop_orb::platform::SingleInstance::Result::already_running)
         return 0;

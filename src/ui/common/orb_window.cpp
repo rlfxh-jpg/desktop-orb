@@ -9,6 +9,7 @@ namespace desktop_orb::ui {
 namespace {
 constexpr UINT_PTR kTimer = 1;
 constexpr int kLogicalSize = 58;
+constexpr int kEdgeInset = 24;
 }
 
 bool OrbWindow::Create(POINT initial) {
@@ -40,12 +41,18 @@ void OrbWindow::SnapToEdge() {
     const RECT current = Bounds();
     const POINT center{(current.left + current.right) / 2, (current.top + current.bottom) / 2};
     const auto monitor = platform::MonitorAt(center);
+    const int work_width = monitor.work.right - monitor.work.left;
+    const int work_height = monitor.work.bottom - monitor.work.top;
     const int size = std::min({platform::Scale(kLogicalSize, GetDpiForWindow(handle())),
-                               static_cast<int>(monitor.work.right - monitor.work.left),
-                               static_cast<int>(monitor.work.bottom - monitor.work.top)});
+                               work_width, work_height});
+    // 核心逻辑：吸边时按显示器 DPI 留出 24 DIP；极窄工作区则收缩留白，
+    // 确保悬浮球始终完整位于当前显示器的可用区域内。
+    const int inset = std::max(0, std::min({platform::Scale(kEdgeInset, monitor.dpi ? monitor.dpi : 96),
+        (work_width - size) / 2, (work_height - size) / 2}));
     const int x = center.x < (monitor.work.left + monitor.work.right) / 2
-        ? monitor.work.left : monitor.work.right - size;
-    const int y = std::clamp(current.top, monitor.work.top, monitor.work.bottom - size);
+        ? monitor.work.left + inset : monitor.work.right - size - inset;
+    const int y = std::clamp(current.top, monitor.work.top + inset,
+        monitor.work.bottom - size - inset);
     SetWindowPos(handle(), HWND_TOPMOST, x, y, size, size, SWP_NOACTIVATE);
     artwork_.Render(handle(), alpha_);
     if (on_moved) on_moved({x, y});

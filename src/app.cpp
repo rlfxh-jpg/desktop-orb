@@ -114,6 +114,9 @@ bool CopyTextToClipboard(HWND owner, const std::wstring& text) {
 App::App() : panel_(catalog_) {}
 
 App::~App() {
+    // 核心逻辑：正常退出和初始化中途失败时，先撤销围栏对 Explorer 图标窗口的隐藏。
+    // 外部强制终止进程不会执行析构，此时由独立的桌面图标保护进程兜底恢复。
+    fence_panel_.Hide();
     if (hotkey_registered_) UnregisterHotKey(orb_.handle(), kHotkeyId);
 }
 
@@ -433,7 +436,11 @@ void App::ShowContextMenu() {
                           nullptr, SW_SHOWNORMAL);
             break;
         case 2: ReloadSettings(); break;
-        case 3: DestroyWindow(orb_.handle()); break;
+        case 3:
+            // 核心逻辑：先显式恢复桌面图标，再销毁负责结束消息循环的悬浮球窗口。
+            CloseOverlays();
+            DestroyWindow(orb_.handle());
+            break;
         default: break;
     }
 }
