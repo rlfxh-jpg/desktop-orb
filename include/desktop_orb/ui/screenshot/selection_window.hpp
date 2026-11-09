@@ -5,6 +5,7 @@
 #include "desktop_orb/platform/screenshot/screenshot_service.hpp"
 #include "desktop_orb/ui/common/window_base.hpp"
 #include "desktop_orb/ui/screenshot/result_panel_window.hpp"
+#include "desktop_orb/ui/screenshot/selection_history.hpp"
 #include <functional>
 #include <string>
 
@@ -14,7 +15,8 @@ namespace desktop_orb::ui {
 // 参数：无。返回：无。
 enum class ScreenshotAction {
     extract_text, summarize, copy, save, recapture, close,
-    pen, pixelate, translate, pin_image, copy_analysis_result, none
+    pen, pixelate, eraser, undo, redo, translate, pin_image,
+    copy_analysis_result, none
 };
 
 // 作用：覆盖所有显示器显示冻结画面、暗色遮罩和可拖动截图选区。
@@ -34,7 +36,7 @@ public:
     // 作用：查询选区界面是否显示。参数：无。返回：显示为 true。
     [[nodiscard]] bool visible() const { return visible_; }
     // 作用：更新大模型分析进行中的显示状态。
-    // 参数：pending 为 true 时禁用两个分析按钮并显示等待状态。返回：无。
+    // 参数：pending 为 true 时禁用三个分析按钮并显示等待状态。返回：无。
     void SetAnalysisPending(bool pending);
     // 作用：在截图操作栏下方显示可选择和滚动的大模型分析结果。
     // 参数：title 为结果标题；text 为可复制的完整结果。返回：无。
@@ -56,8 +58,8 @@ protected:
 
 private:
     // 作用：记录鼠标当前操作选区的方式。参数：无。返回：无。
-    enum class DragMode { none, create, move, resize, draw_pen, draw_pixelate };
-    enum class EditTool { none, pen, pixelate };
+    enum class DragMode { none, create, move, resize, draw_pen, draw_pixelate, erase_edits };
+    enum class EditTool { none, pen, pixelate, eraser };
 
     // 作用：标记本次拉伸需要随鼠标移动的选区边缘。
     // 参数：无。返回：无；多个边缘可按位组合以支持角点拉伸。
@@ -110,6 +112,21 @@ private:
     // 作用：清除悬停按钮及待显示的提示。
     // 参数：无。返回：无。
     void ClearToolbarHover();
+    // 作用：取得当前选区及标注的值快照。参数：无。返回：可放入历史的独立状态。
+    [[nodiscard]] ScreenshotSelectionState CaptureState() const;
+    // 作用：把已完成的鼠标操作加入撤销栈，并清空重做分支。
+    // 参数：before 为操作前的状态。返回：无；无实际变化时不记录。
+    void CommitState(const ScreenshotSelectionState& before);
+    // 作用：恢复已保存的选区与标注，并使旧分析结果失效。
+    // 参数：state 为目标状态。返回：无。
+    void RestoreState(const ScreenshotSelectionState& state);
+    // 作用：撤销最近一次选区或标注操作。参数：无。返回：无；没有历史时保持当前状态。
+    void Undo();
+    // 作用：重新执行最近一次撤销的操作。参数：无。返回：无；没有历史时保持当前状态。
+    void Redo();
+    // 作用：用橡皮擦轨迹删除接触到的整条笔迹或马赛克区域。
+    // 参数：from、to 为屏幕坐标路径端点。返回：本次有对象被删除时为 true。
+    bool EraseBetween(POINT from, POINT to);
     // 作用：根据动作通知应用层并保持窗口生命周期由应用管理。
     // 参数：action 为请求操作。返回：无。
     void Dispatch(ScreenshotAction action);
@@ -136,6 +153,8 @@ private:
     platform::ScreenshotEdits edits_;
     POINT edit_start_{};
     POINT edit_current_{};
+    ScreenshotSelectionState drag_before_;
+    ScreenshotSelectionHistory history_;
     ResultPanelWindow result_panel_;
 };
 

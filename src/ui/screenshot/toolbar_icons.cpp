@@ -1,4 +1,4 @@
-// 文件职责：用 GDI 基本图形绘制截图工具栏的十个内嵌图标。
+// 文件职责：用 GDI 基本图形绘制截图工具栏的十三个内嵌图标。
 // 图标坐标统一为 32×32，再映射到实际按钮尺寸；GDI 画笔在单次绘制后释放。
 #include "desktop_orb/ui/screenshot/toolbar_icons.hpp"
 #include "desktop_orb/ui/screenshot/selection_window.hpp"
@@ -127,6 +127,18 @@ bool DrawScreenshotToolbarIcon(HDC dc, ScreenshotAction action, RECT bounds, COL
             Box(dc, bounds, 16, 5, 24, 13);
             Box(dc, bounds, 5, 16, 13, 24);
             Box(dc, bounds, 16, 16, 24, 24);
+            break;
+        case ScreenshotAction::eraser:
+            Path(dc, bounds, {{5, 21}, {17, 7}, {27, 16}, {16, 27}, {11, 27}, {5, 21}});
+            Line(dc, bounds, 11, 15, 22, 22);
+            break;
+        case ScreenshotAction::undo:
+            Path(dc, bounds, {{12, 9}, {5, 16}, {12, 23}});
+            Path(dc, bounds, {{6, 16}, {18, 16}, {23, 19}, {25, 24}});
+            break;
+        case ScreenshotAction::redo:
+            Path(dc, bounds, {{20, 9}, {27, 16}, {20, 23}});
+            Path(dc, bounds, {{26, 16}, {14, 16}, {9, 19}, {7, 24}});
             break;
         case ScreenshotAction::close:
             Line(dc, bounds, 7, 7, 25, 25);

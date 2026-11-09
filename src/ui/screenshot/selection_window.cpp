@@ -15,15 +15,11 @@
 namespace desktop_orb::ui {
 namespace {
 
-constexpr int kToolbarRowHeight = 42;
-constexpr int kToolbarHeight = kToolbarRowHeight * 2;
-constexpr int kToolbarButtonWidth = 38;
-constexpr int kToolbarGap = 6;
+constexpr int kToolbarHeight = 44;
+constexpr int kToolbarButtonWidth = 36;
+constexpr int kToolbarGap = 4;
 constexpr int kToolbarPadding = 6;
-constexpr int kToolbarColumns = 5;
-constexpr int kToolbarButtonCount = 10;
-constexpr int kToolbarWidth = kToolbarPadding * 2 + kToolbarButtonWidth * kToolbarColumns +
-                              kToolbarGap * (kToolbarColumns - 1);
+constexpr int kToolbarButtonCount = 13;
 constexpr int kResultsWidth = 520;
 constexpr int kResultsHeight = 260;
 constexpr int kSelectionBorderWidth = 3;
@@ -37,10 +33,83 @@ constexpr std::array<ScreenshotAction, kToolbarButtonCount> kToolbarActions{
     ScreenshotAction::extract_text, ScreenshotAction::summarize,
     ScreenshotAction::translate, ScreenshotAction::copy, ScreenshotAction::save,
     ScreenshotAction::recapture, ScreenshotAction::pin_image,
-    ScreenshotAction::pen, ScreenshotAction::pixelate, ScreenshotAction::close};
+    ScreenshotAction::pen, ScreenshotAction::pixelate, ScreenshotAction::eraser,
+    ScreenshotAction::undo, ScreenshotAction::redo, ScreenshotAction::close};
 constexpr std::array<const wchar_t*, kToolbarButtonCount> kToolbarNames{
     L"提取文字", L"总结截图", L"翻译文字", L"复制", L"保存",
-    L"重新截取", L"贴到桌面", L"画笔", L"马赛克", L"关闭"};
+    L"重新截取", L"贴到桌面", L"画笔", L"马赛克", L"橡皮擦",
+    L"撤销", L"重做", L"关闭"};
+
+// 作用：集中保存工具栏的物理像素尺寸，保证绘制、点击和悬停使用同一排版。
+// 参数：无。返回：无。
+struct ToolbarLayout {
+    int padding = 0;
+    int button = 0;
+    int gap = 0;
+    int height = 0;
+    int width = 0;
+};
+
+// 作用：在当前 DPI 下计算单排按钮尺寸，屏幕较窄时均匀收紧按钮和间隙。
+// 参数：dpi 为窗口 DPI；available_width 为当前显示器宽度。返回：工具栏物理像素布局。
+ToolbarLayout MakeToolbarLayout(UINT dpi, int available_width) {
+    ToolbarLayout layout{platform::Scale(kToolbarPadding, dpi),
+        platform::Scale(kToolbarButtonWidth, dpi), platform::Scale(kToolbarGap, dpi),
+        platform::Scale(kToolbarHeight, dpi), 0};
+    layout.width = layout.padding * 2 + layout.button * kToolbarButtonCount +
+        layout.gap * (kToolbarButtonCount - 1);
+    if (layout.width > available_width && available_width > 0) {
+        layout.padding = std::max(1, std::min(layout.padding, available_width / 80));
+        layout.gap = std::max(1, std::min(layout.gap, available_width / 160));
+        layout.button = std::max(1, (available_width - layout.padding * 2 -
+            layout.gap * (kToolbarButtonCount - 1)) / kToolbarButtonCount);
+        layout.width = layout.padding * 2 + layout.button * kToolbarButtonCount +
+            layout.gap * (kToolbarButtonCount - 1);
+    }
+    return layout;
+}
+
+// 作用：选择工具栏应停留的显示器，避免单排按钮跨越显示器边界或落到屏幕空隙。
+// 参数：selection 为屏幕坐标选区。返回：选区左下角所在或最近的显示器。
+platform::Monitor ToolbarMonitor(RECT selection) {
+    return platform::MonitorAt({selection.left, selection.bottom - 1});
+}
+
+// 作用：判断画笔笔迹是否接触橡皮擦的圆形范围。
+// 参数：stroke 为相对选区的笔迹；point 为相对选区的擦除点；radius 为半径。
+// 返回：至少一个线段接触擦除点时为 true。
+bool StrokeTouches(const platform::ScreenshotStroke& stroke, POINT point, int radius) {
+    if (stroke.points.empty()) return false;
+    const double radius_squared = static_cast<double>(radius) * radius;
+    for (size_t index = 0; index < stroke.points.size(); ++index) {
+        const POINT first = stroke.points[index];
+        const POINT second = stroke.points[std::min(index + 1, stroke.points.size() - 1)];
+        const double dx = static_cast<double>(second.x - first.x);
+        const double dy = static_cast<double>(second.y - first.y);
+        const double length_squared = dx * dx + dy * dy;
+        const double position = length_squared == 0 ? 0 : std::clamp(
+            ((point.x - first.x) * dx + (point.y - first.y) * dy) / length_squared, 0.0, 1.0);
+        const double nearest_x = first.x + position * dx;
+        const double nearest_y = first.y + position * dy;
+        const double distance_x = point.x - nearest_x;
+        const double distance_y = point.y - nearest_y;
+        if (distance_x * distance_x + distance_y * distance_y <= radius_squared) return true;
+    }
+    return false;
+}
+
+// 作用：判断马赛克矩形是否接触橡皮擦圆形范围。
+// 参数：area 为相对选区矩形；point 为相对选区的擦除点；radius 为半径。
+// 返回：两者接触时为 true。
+bool AreaTouches(RECT area, POINT point, int radius) {
+    const int x = std::clamp(static_cast<int>(point.x), static_cast<int>(area.left),
+        static_cast<int>(area.right));
+    const int y = std::clamp(static_cast<int>(point.y), static_cast<int>(area.top),
+        static_cast<int>(area.bottom));
+    const long long dx = point.x - x;
+    const long long dy = point.y - y;
+    return dx * dx + dy * dy <= static_cast<long long>(radius) * radius;
+}
 
 // 作用：把屏幕坐标矩形转换为以虚拟桌面原点为基准的客户区坐标。
 // 参数：screen 为屏幕矩形；origin 为窗口屏幕原点。返回：客户区矩形。
@@ -104,6 +173,7 @@ bool SelectionWindow::ShowFor(platform::ScreenshotService& snapshot) {
     toolbar_pressed_ = false;
     selected_ = false;
     edits_ = {};
+    history_.Reset();
     edit_tool_ = EditTool::none;
     analysis_pending_ = false;
     analysis_result_visible_ = false;
@@ -189,6 +259,7 @@ void SelectionWindow::Hide() {
     toolbar_pressed_ = false;
     selected_ = false;
     edits_ = {};
+    history_.Reset();
     edit_tool_ = EditTool::none;
     analysis_pending_ = false;
     analysis_result_visible_ = false;
@@ -364,10 +435,12 @@ void SelectionWindow::UpdateDrag(POINT client_point) {
 
 RECT SelectionWindow::ToolbarBounds() const {
     const RECT selection = Selection();
-    const RECT desktop = snapshot_ ? snapshot_->bounds() : RECT{};
+    const RECT desktop = snapshot_ ? ToolbarMonitor(selection).bounds : RECT{};
     const UINT dpi = GetDpiForWindow(handle());
-    const int width = platform::Scale(kToolbarWidth, dpi);
-    const int height = platform::Scale(kToolbarHeight, dpi);
+    const auto layout = MakeToolbarLayout(dpi,
+        static_cast<int>(desktop.right - desktop.left));
+    const int width = layout.width;
+    const int height = layout.height;
     const int gap = platform::Scale(10, dpi);
     int left = selection.left;
     int top = selection.bottom + gap;
@@ -443,17 +516,16 @@ void SelectionWindow::LayoutResultPanel() {
 ScreenshotAction SelectionWindow::HitAction(POINT point) const {
     const RECT bounds = snapshot_ ? snapshot_->bounds() : RECT{};
     const RECT bar = ToClient(ToolbarBounds(), {bounds.left, bounds.top});
-    const int dpi = static_cast<int>(GetDpiForWindow(handle()));
-    const int pad = platform::Scale(kToolbarPadding, dpi);
-    const int button = platform::Scale(kToolbarButtonWidth, dpi);
-    const int gap = platform::Scale(kToolbarGap, dpi);
-    const int offset = point.x - bar.left - pad;
-    const int stride = button + gap;
-    const int column = offset / stride;
-    const int row = (point.y - bar.top) / platform::Scale(kToolbarRowHeight, dpi);
-    const int index = row * kToolbarColumns + column;
-    if (offset < 0 || point.y < bar.top || row > 1 || column < 0 || column >= kToolbarColumns ||
-        index >= kToolbarButtonCount || offset % stride >= button)
+    const RECT monitor = ToolbarMonitor(Selection()).bounds;
+    const auto layout = MakeToolbarLayout(GetDpiForWindow(handle()),
+        static_cast<int>(monitor.right - monitor.left));
+    const int offset = point.x - bar.left - layout.padding;
+    const int stride = layout.button + layout.gap;
+    if (offset < 0 || point.y < bar.top + (layout.height - layout.button) / 2 ||
+        point.y >= bar.top + (layout.height + layout.button) / 2)
+        return ScreenshotAction::none;
+    const int index = offset / stride;
+    if (index >= kToolbarButtonCount || offset % stride >= layout.button)
         return ScreenshotAction::none;
     return kToolbarActions[index];
 }
@@ -480,10 +552,87 @@ void SelectionWindow::ClearToolbarHover() {
     if (had_tooltip && visible_) InvalidateRect(handle(), nullptr, FALSE);
 }
 
+// 作用：复制当前选区与编辑内容，供一次完整手势结束后写入撤销栈。
+// 参数：无。返回：不借用窗口或位图资源的状态副本。
+ScreenshotSelectionState SelectionWindow::CaptureState() const {
+    return {selection_, selected_, edits_};
+}
+
+// 作用：只记录实际改变了选区或编辑对象的已完成操作。
+// 参数：before 为操作开始前的状态。返回：无；新操作会清除重做分支。
+void SelectionWindow::CommitState(const ScreenshotSelectionState& before) {
+    // 核心逻辑：初次创建选区不加入历史；否则撤销后工具栏消失，用户无法点击重做。
+    if (!before.selected) return;
+    if (!history_.Commit(before, CaptureState())) return;
+    KillTimer(handle(), kResultPanelRestoreTimerId);
+    analysis_result_visible_ = false;
+    result_panel_.Hide();
+    result_panel_.SetContent(L"", L"");
+    InvalidateRect(handle(), nullptr, FALSE);
+}
+
+// 作用：切换到历史中的选区和编辑状态，并清除已不对应的分析结果。
+// 参数：state 为保存的完整状态。返回：无。
+void SelectionWindow::RestoreState(const ScreenshotSelectionState& state) {
+    ClearToolbarHover();
+    selection_ = state.selection;
+    selected_ = state.selected;
+    edits_ = state.edits;
+    if (!selected_) edit_tool_ = EditTool::none;
+    KillTimer(handle(), kResultPanelRestoreTimerId);
+    analysis_result_visible_ = false;
+    result_panel_.Hide();
+    result_panel_.SetContent(L"", L"");
+    InvalidateRect(handle(), nullptr, FALSE);
+}
+
+// 作用：退回最近一次已完成的选区调整或标注操作。
+// 参数：无。返回：无；撤销栈为空时不改变画面。
+void SelectionWindow::Undo() {
+    ScreenshotSelectionState previous;
+    if (!history_.Undo(CaptureState(), previous)) return;
+    RestoreState(previous);
+}
+
+// 作用：恢复最近一次被撤销的操作。
+// 参数：无。返回：无；重做栈为空时不改变画面。
+void SelectionWindow::Redo() {
+    ScreenshotSelectionState next;
+    if (!history_.Redo(CaptureState(), next)) return;
+    RestoreState(next);
+}
+
+// 作用：沿手势路径采样并删除相交的笔迹或马赛克对象。
+// 参数：from、to 为屏幕坐标的路径两端。返回：至少删除一个对象时为 true。
+bool SelectionWindow::EraseBetween(POINT from, POINT to) {
+    if (edits_.strokes.empty() && edits_.pixelated_areas.empty()) return false;
+    const int radius = std::max(4, platform::Scale(9, GetDpiForWindow(handle())));
+    const int distance = std::max(std::abs(static_cast<int>(to.x - from.x)),
+        std::abs(static_cast<int>(to.y - from.y)));
+    const int steps = std::max(1, distance / std::max(1, radius / 2));
+    bool changed = false;
+    for (int step = 0; step <= steps; ++step) {
+        const POINT relative{from.x + (to.x - from.x) * step / steps - selection_.left,
+            from.y + (to.y - from.y) * step / steps - selection_.top};
+        changed |= std::erase_if(edits_.strokes,
+            [&](const auto& stroke) { return StrokeTouches(stroke, relative, radius); }) != 0;
+        changed |= std::erase_if(edits_.pixelated_areas,
+            [&](RECT area) { return AreaTouches(area, relative, radius); }) != 0;
+        if (edits_.strokes.empty() && edits_.pixelated_areas.empty()) break;
+    }
+    return changed;
+}
+
 void SelectionWindow::Dispatch(ScreenshotAction action) {
     if (action == ScreenshotAction::none) return;
-    if (action == ScreenshotAction::pen || action == ScreenshotAction::pixelate) {
-        const EditTool requested = action == ScreenshotAction::pen ? EditTool::pen : EditTool::pixelate;
+    if (drag_mode_ != DragMode::none &&
+        (action == ScreenshotAction::undo || action == ScreenshotAction::redo)) return;
+    if (action == ScreenshotAction::undo) { Undo(); return; }
+    if (action == ScreenshotAction::redo) { Redo(); return; }
+    if (action == ScreenshotAction::pen || action == ScreenshotAction::pixelate ||
+        action == ScreenshotAction::eraser) {
+        const EditTool requested = action == ScreenshotAction::pen ? EditTool::pen
+            : action == ScreenshotAction::pixelate ? EditTool::pixelate : EditTool::eraser;
         edit_tool_ = edit_tool_ == requested ? EditTool::none : requested;
         InvalidateRect(handle(), nullptr, FALSE);
         return;
@@ -566,6 +715,21 @@ void SelectionWindow::DrawFrame(HDC dc) {
             std::max(edit_start_.y, edit_current_.y)};
         DrawSelectionBorder(dc, ToClient(area, origin));
     }
+    if (drag_mode_ == DragMode::erase_edits) {
+        // 核心逻辑：拖动橡皮擦时显示实际命中半径；圆框只绘于预览，不进入输出图像。
+        const int radius = std::max(4, platform::Scale(9, GetDpiForWindow(handle())));
+        const POINT center{edit_current_.x - origin.x, edit_current_.y - origin.y};
+        HPEN pen = CreatePen(PS_SOLID, 1, RGB(24, 132, 255));
+        if (pen) {
+            HGDIOBJ old_pen = SelectObject(dc, pen);
+            HGDIOBJ old_brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            Ellipse(dc, center.x - radius, center.y - radius,
+                center.x + radius, center.y + radius);
+            SelectObject(dc, old_brush);
+            SelectObject(dc, old_pen);
+            DeleteObject(pen);
+        }
+    }
 
     const RECT selection = ToClient(Selection(), origin);
     if (drag_mode_ != DragMode::none || selected_) {
@@ -597,34 +761,35 @@ void SelectionWindow::DrawFrame(HDC dc) {
         const RECT bar = ToClient(ToolbarBounds(), origin);
         Fill(dc, bar, Color(29, 39, 42));
         const UINT dpi = GetDpiForWindow(handle());
-        const int pad = platform::Scale(kToolbarPadding, dpi);
-        const int button = platform::Scale(kToolbarButtonWidth, dpi);
-        const int row_height = platform::Scale(kToolbarRowHeight, dpi);
-        const int gap = platform::Scale(kToolbarGap, dpi);
+        const RECT monitor = ToolbarMonitor(Selection()).bounds;
+        const auto layout = MakeToolbarLayout(dpi,
+            static_cast<int>(monitor.right - monitor.left));
         for (int index = 0; index < kToolbarButtonCount; ++index) {
-            const int row = index / kToolbarColumns;
-            const int column = index % kToolbarColumns;
-            RECT item{bar.left + pad + column * (button + gap),
-                bar.top + row * row_height + platform::Scale(5, dpi),
-                bar.left + pad + column * (button + gap) + button,
-                bar.top + (row + 1) * row_height - platform::Scale(5, dpi)};
+            const int left = bar.left + layout.padding + index * (layout.button + layout.gap);
+            const int top = bar.top + (layout.height - layout.button) / 2;
+            RECT item{left, top, left + layout.button, top + layout.button};
             const ScreenshotAction action = kToolbarActions[index];
             const bool analysis_disabled = analysis_pending_ &&
                 (action == ScreenshotAction::extract_text || action == ScreenshotAction::summarize ||
                  action == ScreenshotAction::translate);
-            const COLORREF background = analysis_disabled ? Color(77, 84, 86)
+            const bool history_disabled = (action == ScreenshotAction::undo && !history_.can_undo()) ||
+                (action == ScreenshotAction::redo && !history_.can_redo());
+            const bool disabled = analysis_disabled || history_disabled;
+            const COLORREF background = disabled ? Color(77, 84, 86)
                 : (action == ScreenshotAction::close ? Color(67, 76, 79)
                     : ((action == ScreenshotAction::pen && edit_tool_ == EditTool::pen) ||
-                       (action == ScreenshotAction::pixelate && edit_tool_ == EditTool::pixelate)
+                       (action == ScreenshotAction::pixelate && edit_tool_ == EditTool::pixelate) ||
+                       (action == ScreenshotAction::eraser && edit_tool_ == EditTool::eraser)
                         ? Color(36, 108, 192) : Color(44, 135, 119)));
             Fill(dc, item, background);
             // 核心逻辑：按钮图标直接在截图后台表面绘制，保持透明背景与高 DPI 清晰度。
-            const int icon_size = platform::Scale(23, dpi);
+            const int icon_size = std::max(1, std::min(platform::Scale(23, dpi),
+                layout.button - platform::Scale(8, dpi)));
             const int icon_left = (item.left + item.right - icon_size) / 2;
             const int icon_top = (item.top + item.bottom - icon_size) / 2;
             if (!DrawScreenshotToolbarIcon(dc, action,
                     {icon_left, icon_top, icon_left + icon_size, icon_top + icon_size},
-                    analysis_disabled ? Color(190, 195, 197) : Color(255, 255, 255))) {
+                    disabled ? Color(190, 195, 197) : Color(255, 255, 255))) {
                 Text(dc, L"?", item, platform::Scale(17, dpi), Color(255, 255, 255),
                     FW_SEMIBOLD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             }
@@ -633,10 +798,10 @@ void SelectionWindow::DrawFrame(HDC dc) {
             const auto found = std::find(kToolbarActions.begin(), kToolbarActions.end(), hovered_action_);
             if (found != kToolbarActions.end()) {
                 const int index = static_cast<int>(found - kToolbarActions.begin());
-                const int column = index % kToolbarColumns;
                 const int tooltip_width = platform::Scale(88, dpi);
                 const int tooltip_height = platform::Scale(27, dpi);
-                const int center = bar.left + pad + column * (button + gap) + button / 2;
+                const int center = bar.left + layout.padding + index *
+                    (layout.button + layout.gap) + layout.button / 2;
                 const int left = std::clamp(center - tooltip_width / 2, 0,
                     std::max(0, frame_width_ - tooltip_width));
                 const int top = bar.top >= tooltip_height + platform::Scale(5, dpi)
@@ -681,16 +846,21 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 return 0;
             }
 
+            drag_before_ = CaptureState();
+
             if (selected_ && edit_tool_ != EditTool::none &&
                 HitResizeEdges(screen_point) == 0 && PtInRect(&selection_, screen_point)) {
                 // 核心逻辑：编辑模式仅修改既有选区，不把笔迹手势误判为移动选区。
                 edit_start_ = screen_point;
                 edit_current_ = screen_point;
-                drag_mode_ = edit_tool_ == EditTool::pen
-                    ? DragMode::draw_pen : DragMode::draw_pixelate;
+                drag_mode_ = edit_tool_ == EditTool::pen ? DragMode::draw_pen
+                    : edit_tool_ == EditTool::pixelate ? DragMode::draw_pixelate
+                    : DragMode::erase_edits;
                 if (drag_mode_ == DragMode::draw_pen)
                     edits_.strokes.push_back({{{screen_point.x - selection_.left,
                         screen_point.y - selection_.top}}});
+                else if (drag_mode_ == DragMode::erase_edits)
+                    EraseBetween(screen_point, screen_point);
                 result_panel_.Hide();
                 SetCapture(handle());
                 UpdateCursor(point);
@@ -731,13 +901,17 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             return 0;
         }
         case WM_MOUSEMOVE:
-            if (drag_mode_ == DragMode::draw_pen || drag_mode_ == DragMode::draw_pixelate) {
+            if (drag_mode_ == DragMode::draw_pen || drag_mode_ == DragMode::draw_pixelate ||
+                drag_mode_ == DragMode::erase_edits) {
                 const POINT raw = ScreenPoint({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+                const POINT previous = edit_current_;
                 edit_current_ = {std::clamp<LONG>(raw.x, selection_.left, selection_.right - 1),
                     std::clamp<LONG>(raw.y, selection_.top, selection_.bottom - 1)};
                 if (drag_mode_ == DragMode::draw_pen && !edits_.strokes.empty())
                     edits_.strokes.back().points.push_back({edit_current_.x - selection_.left,
                         edit_current_.y - selection_.top});
+                else if (drag_mode_ == DragMode::erase_edits)
+                    EraseBetween(previous, edit_current_);
                 InvalidateRect(handle(), nullptr, FALSE);
             } else if (drag_mode_ != DragMode::none) {
                 UpdateDrag({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
@@ -756,8 +930,10 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 if (PtInRect(&toolbar, point)) Dispatch(HitAction(point));
                 return 0;
             }
-            if (drag_mode_ == DragMode::draw_pen || drag_mode_ == DragMode::draw_pixelate) {
+            if (drag_mode_ == DragMode::draw_pen || drag_mode_ == DragMode::draw_pixelate ||
+                drag_mode_ == DragMode::erase_edits) {
                 const POINT raw = ScreenPoint({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+                const POINT previous = edit_current_;
                 edit_current_ = {std::clamp<LONG>(raw.x, selection_.left, selection_.right - 1),
                     std::clamp<LONG>(raw.y, selection_.top, selection_.bottom - 1)};
                 if (drag_mode_ == DragMode::draw_pixelate) {
@@ -767,9 +943,10 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                         std::max(edit_start_.y, edit_current_.y) - selection_.top + 1};
                     if (area.right - area.left >= 2 && area.bottom - area.top >= 2)
                         edits_.pixelated_areas.push_back(area);
-                }
+                } else if (drag_mode_ == DragMode::erase_edits) EraseBetween(previous, edit_current_);
                 drag_mode_ = DragMode::none;
                 ReleaseCapture();
+                CommitState(drag_before_);
                 InvalidateRect(handle(), nullptr, FALSE);
                 return 0;
             }
@@ -782,12 +959,15 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 if (completed_mode == DragMode::create) {
                     selected_ = selection_.right - selection_.left >= 2 &&
                                 selection_.bottom - selection_.top >= 2;
+                    if (!selected_ && drag_before_.selected) RestoreState(drag_before_);
                 }
+                CommitState(drag_before_);
                 UpdateCursor({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
                 InvalidateRect(handle(), nullptr, FALSE);
             }
             return 0;
         case WM_CAPTURECHANGED:
+            if (drag_mode_ != DragMode::none) RestoreState(drag_before_);
             drag_mode_ = DragMode::none;
             toolbar_pressed_ = false;
             resize_edges_ = 0;
@@ -811,7 +991,12 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             }
             return WindowBase::HandleMessage(message, wparam, lparam);
         case WM_KEYDOWN:
-            if (wparam == VK_ESCAPE) Dispatch(ScreenshotAction::close);
+            if ((GetKeyState(VK_CONTROL) & 0x8000) && wparam == 'Z') {
+                Dispatch((GetKeyState(VK_SHIFT) & 0x8000)
+                    ? ScreenshotAction::redo : ScreenshotAction::undo);
+            } else if ((GetKeyState(VK_CONTROL) & 0x8000) && wparam == 'Y') {
+                Dispatch(ScreenshotAction::redo);
+            } else if (wparam == VK_ESCAPE) Dispatch(ScreenshotAction::close);
             else if (wparam == VK_RETURN && selected_) Dispatch(ScreenshotAction::copy);
             return 0;
         case WM_DPICHANGED:

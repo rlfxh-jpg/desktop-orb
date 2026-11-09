@@ -37,6 +37,7 @@ add_executable(desktop-orb WIN32
     src/ui/desktop_fence/fence_card_renderer.cpp
     src/ui/window_switcher/switcher_panel.cpp
     src/ui/screenshot/selection_window.cpp
+    src/ui/screenshot/selection_history.cpp
     src/ui/screenshot/toolbar_icons.cpp
     src/ui/screenshot/pinned_image_window.cpp
     src/ui/screenshot/result_panel_window.cpp
@@ -63,6 +64,18 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(selection-history-test
+        tests/selection_history_test.cpp
+        src/ui/screenshot/selection_history.cpp
+    )
+    target_include_directories(selection-history-test PRIVATE include)
+    target_compile_features(selection-history-test PRIVATE cxx_std_20)
+    target_compile_definitions(selection-history-test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+    if(MSVC)
+        target_compile_options(selection-history-test PRIVATE /W4 /permissive- /utf-8)
+    endif()
+    add_test(NAME selection-history COMMAND selection-history-test)
+
     add_executable(clipboard-history-test
         tests/clipboard_history_test.cpp
         src/platform/clipboard/clipboard_history.cpp

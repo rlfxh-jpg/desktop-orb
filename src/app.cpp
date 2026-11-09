@@ -364,6 +364,9 @@ void App::HandleScreenshotAction(ui::ScreenshotAction action, RECT selection) {
             return;
         case ui::ScreenshotAction::pen:
         case ui::ScreenshotAction::pixelate:
+        case ui::ScreenshotAction::eraser:
+        case ui::ScreenshotAction::undo:
+        case ui::ScreenshotAction::redo:
             return;
         case ui::ScreenshotAction::pin_image: {
             std::wstring error;
