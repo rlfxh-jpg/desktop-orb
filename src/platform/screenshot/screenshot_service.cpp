@@ -162,7 +162,8 @@ BitmapHandle CropBitmap(HBITMAP source, RECT source_bounds, RECT selection) {
 // 返回：编辑成功或无需编辑时为 true；设备上下文不可用时为 false。
 bool EditBitmap(HBITMAP bitmap, int width, int height, const ScreenshotEdits* edits) {
     if (!bitmap) return false;
-    if (!edits || (edits->strokes.empty() && edits->pixelated_areas.empty())) return true;
+    if (!edits || (edits->strokes.empty() && edits->pixelated_areas.empty() &&
+        edits->texts.empty())) return true;
     HDC dc = CreateCompatibleDC(nullptr);
     if (!dc) return false;
     HGDIOBJ previous = SelectObject(dc, bitmap);

@@ -5,7 +5,7 @@
 using desktop_orb::ui::ScreenshotSelectionHistory;
 using desktop_orb::ui::ScreenshotSelectionState;
 
-// 作用：验证画笔与马赛克状态的撤销、重做及重做分支清除。
+// 作用：验证画笔、马赛克和文字状态的撤销、重做及重做分支清除。
 // 参数：无。返回：规则正确为 0；失败时返回对应非零步骤码。
 int main() {
     ScreenshotSelectionHistory history;
@@ -27,6 +27,12 @@ int main() {
     if (!history.Commit(restored, pixelated) || history.can_redo()) return 6;
     if (!history.Undo(pixelated, restored) || !restored.edits.pixelated_areas.empty()) return 7;
     if (!history.Redo(restored, restored) || restored.edits.pixelated_areas.size() != 1) return 8;
+    ScreenshotSelectionState captioned = restored;
+    captioned.edits.texts.push_back({{8, 9}, L"截图说明", 24});
+    if (!history.Commit(restored, captioned)) return 9;
+    if (!history.Undo(captioned, restored) || !restored.edits.texts.empty()) return 10;
+    if (!history.Redo(restored, restored) || restored.edits.texts.size() != 1 ||
+        restored.edits.texts.front().content != L"截图说明") return 11;
     history.Reset();
-    return !history.can_undo() && !history.can_redo() ? 0 : 9;
+    return !history.can_undo() && !history.can_redo() ? 0 : 12;
 }

@@ -16,6 +16,7 @@ namespace desktop_orb::ui {
 enum class ScreenshotAction {
     extract_text, summarize, copy, save, recapture, close,
     pen, pixelate, eraser, undo, redo, translate, pin_image,
+    add_text,
     copy_analysis_result, none
 };
 
@@ -44,7 +45,7 @@ public:
     // 作用：取得当前展示的大模型分析结果，供用户点击复制按钮时读取。
     // 参数：无。返回：完整结果文本；尚无结果时为空字符串。
     [[nodiscard]] const std::wstring& analysis_result() const { return result_panel_.content(); }
-    // 作用：取得本次选区内的标注与马赛克数据。参数：无。
+    // 作用：取得本次选区内的笔迹、马赛克和文字标注数据。参数：无。
     // 返回：编辑数据借用引用，在隐藏或重新截取后失效。
     [[nodiscard]] const platform::ScreenshotEdits& edits() const { return edits_; }
     // 作用：通知应用层执行截图操作。参数：action 为请求操作；selection 为屏幕坐标选区。
@@ -59,7 +60,7 @@ protected:
 private:
     // 作用：记录鼠标当前操作选区的方式。参数：无。返回：无。
     enum class DragMode { none, create, move, resize, draw_pen, draw_pixelate, erase_edits };
-    enum class EditTool { none, pen, pixelate, eraser };
+    enum class EditTool { none, pen, pixelate, eraser, text };
 
     // 作用：标记本次拉伸需要随鼠标移动的选区边缘。
     // 参数：无。返回：无；多个边缘可按位组合以支持角点拉伸。
@@ -127,6 +128,15 @@ private:
     // 作用：用橡皮擦轨迹删除接触到的整条笔迹或马赛克区域。
     // 参数：from、to 为屏幕坐标路径端点。返回：本次有对象被删除时为 true。
     bool EraseBetween(POINT from, POINT to);
+    // 作用：在选区点击点显示临时文字输入框，输入内容尚不进入截图数据。
+    // 参数：screen_point 为屏幕坐标点击位置。返回：输入框成功创建为 true。
+    bool BeginTextInput(POINT screen_point);
+    // 作用：结束当前文字输入并按需把非空内容写入历史。
+    // 参数：accept 表示提交；restore_focus 表示把键盘焦点还给选区窗口。返回：无。
+    void FinishTextInput(bool accept, bool restore_focus = true);
+    // 作用：拦截临时输入框的确认、取消和失焦消息。
+    // 参数：editor 为输入框；message、wparam、lparam 为 Win32 消息。返回：已处理结果或原窗口过程结果。
+    static LRESULT CALLBACK TextEditProc(HWND editor, UINT message, WPARAM wparam, LPARAM lparam);
     // 作用：根据动作通知应用层并保持窗口生命周期由应用管理。
     // 参数：action 为请求操作。返回：无。
     void Dispatch(ScreenshotAction action);
@@ -156,6 +166,10 @@ private:
     ScreenshotSelectionState drag_before_;
     ScreenshotSelectionHistory history_;
     ResultPanelWindow result_panel_;
+    HWND text_editor_ = nullptr;
+    WNDPROC original_text_edit_proc_ = nullptr;
+    HFONT text_editor_font_ = nullptr;
+    POINT text_origin_{};
 };
 
 }  // desktop_orb::ui 命名空间结束

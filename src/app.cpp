@@ -363,6 +363,7 @@ void App::HandleScreenshotAction(ui::ScreenshotAction action, RECT selection) {
             StartScreenshotAnalysis(selection, platform::ScreenshotAiTask::translate);
             return;
         case ui::ScreenshotAction::pen:
+        case ui::ScreenshotAction::add_text:
         case ui::ScreenshotAction::pixelate:
         case ui::ScreenshotAction::eraser:
         case ui::ScreenshotAction::undo:

@@ -17,10 +17,11 @@ bool SameRect(RECT left, RECT right) {
 }
 
 // 作用：比较两份截图编辑内容，避免无变化的鼠标动作占用撤销步骤。
-// 参数：left、right 为待比较的标注数据。返回：所有笔迹点和马赛克矩形相同为 true。
+// 参数：left、right 为待比较的标注数据。返回：笔迹、马赛克和文字都相同为 true。
 bool SameEdits(const platform::ScreenshotEdits& left, const platform::ScreenshotEdits& right) {
     if (left.strokes.size() != right.strokes.size() ||
-        left.pixelated_areas.size() != right.pixelated_areas.size()) return false;
+        left.pixelated_areas.size() != right.pixelated_areas.size() ||
+        left.texts.size() != right.texts.size()) return false;
     for (size_t index = 0; index < left.strokes.size(); ++index) {
         const auto& a = left.strokes[index].points;
         const auto& b = right.strokes[index].points;
@@ -30,6 +31,12 @@ bool SameEdits(const platform::ScreenshotEdits& left, const platform::Screenshot
     }
     for (size_t index = 0; index < left.pixelated_areas.size(); ++index)
         if (!SameRect(left.pixelated_areas[index], right.pixelated_areas[index])) return false;
+    for (size_t index = 0; index < left.texts.size(); ++index) {
+        const auto& a = left.texts[index];
+        const auto& b = right.texts[index];
+        if (a.origin.x != b.origin.x || a.origin.y != b.origin.y ||
+            a.font_height != b.font_height || a.content != b.content) return false;
+    }
     return true;
 }
 

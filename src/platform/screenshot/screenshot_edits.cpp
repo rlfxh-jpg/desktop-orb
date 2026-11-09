@@ -1,12 +1,47 @@
-// 文件职责：以 GDI 绘制截图标注，并通过缩小再放大的像素块实现不可逆马赛克。
+// 文件职责：以 GDI 绘制截图笔迹与文字，并通过缩小再放大的像素块实现马赛克。
 // 本模块仅借用目标 HDC，所有临时 GDI 对象在单次调用内释放。
 #include "desktop_orb/platform/screenshot/screenshot_edits.hpp"
 
 #include <algorithm>
 
 namespace desktop_orb::platform {
+namespace {
 
-// 作用：在目标图像上先处理马赛克，再绘制笔迹。
+// 作用：创建与截图物理像素字号一致的中文字体。
+// 参数：height 为文字对象记录的像素高度。返回：新建字体句柄；创建失败时为空。
+HFONT CreateTextFont(int height) {
+    return CreateFontW(-std::max(1, height), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei UI");
+}
+
+}  // 匿名命名空间结束
+
+// 作用：按实际字体计算文字在选区内占用的可见范围。
+// 参数：dc 为测量用设备上下文；width、height 为选区尺寸；text 为文字对象。
+// 返回：相对选区矩形；文字为空、位置越界或 GDI 失败时为空矩形。
+RECT ScreenshotTextBounds(HDC dc, int width, int height, const ScreenshotText& text) {
+    if (!dc || text.content.empty() || width <= 0 || height <= 0 ||
+        text.origin.x >= width || text.origin.y >= height) return {};
+    HFONT font = CreateTextFont(text.font_height);
+    if (!font) return {};
+    HGDIOBJ previous = SelectObject(dc, font);
+    if (!previous || previous == HGDI_ERROR) { DeleteObject(font); return {}; }
+    // 核心逻辑：负坐标允许选区左上边缘向内拉伸后保留原屏幕位置；最终只返回可见部分。
+    RECT measured{std::max<LONG>(0, text.origin.x), std::max<LONG>(0, text.origin.y),
+        width, height};
+    RECT layout{text.origin.x, text.origin.y, width, height};
+    DrawTextW(dc, text.content.c_str(), -1, &layout,
+        DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX | DT_EDITCONTROL);
+    measured.right = std::min<LONG>(width, layout.right);
+    measured.bottom = std::min<LONG>(height, layout.bottom);
+    SelectObject(dc, previous);
+    DeleteObject(font);
+    if (measured.right <= measured.left || measured.bottom <= measured.top) return {};
+    return measured;
+}
+
+// 作用：在目标图像上依次处理马赛克、笔迹和文字。
 // 参数：dc 为包含原始选区的目标 HDC；width、height 为图像尺寸；edits 为编辑数据。
 // 返回：所有编辑成功时为 true；无效尺寸或任一效果失败时为 false。
 bool ApplyScreenshotEdits(HDC dc, int width, int height, const ScreenshotEdits& edits) {
@@ -66,6 +101,30 @@ bool ApplyScreenshotEdits(HDC dc, int width, int height, const ScreenshotEdits& 
         }
         DeleteObject(pen);
     } else if (!edits.strokes.empty()) succeeded = false;
+    for (const auto& annotation : edits.texts) {
+        if (annotation.content.empty()) continue;
+        const RECT bounds = ScreenshotTextBounds(dc, width, height, annotation);
+        if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) continue;
+        HFONT font = CreateTextFont(annotation.font_height);
+        if (!font) { succeeded = false; continue; }
+        HGDIOBJ previous = SelectObject(dc, font);
+        if (!previous || previous == HGDI_ERROR) {
+            DeleteObject(font);
+            succeeded = false;
+            continue;
+        }
+        SetBkMode(dc, TRANSPARENT);
+        const UINT format = DT_WORDBREAK | DT_NOPREFIX | DT_EDITCONTROL;
+        // 核心逻辑：同一文字先画深色阴影再画白色正文，明暗截图上都可辨认。
+        RECT shadow{annotation.origin.x + 1, annotation.origin.y + 1, width, height};
+        SetTextColor(dc, RGB(20, 28, 32));
+        if (!DrawTextW(dc, annotation.content.c_str(), -1, &shadow, format)) succeeded = false;
+        RECT body{annotation.origin.x, annotation.origin.y, width, height};
+        SetTextColor(dc, RGB(255, 255, 255));
+        if (!DrawTextW(dc, annotation.content.c_str(), -1, &body, format)) succeeded = false;
+        SelectObject(dc, previous);
+        DeleteObject(font);
+    }
     RestoreDC(dc, saved);
     return succeeded;
 }

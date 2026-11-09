@@ -19,7 +19,7 @@ constexpr int kToolbarHeight = 44;
 constexpr int kToolbarButtonWidth = 36;
 constexpr int kToolbarGap = 4;
 constexpr int kToolbarPadding = 6;
-constexpr int kToolbarButtonCount = 13;
+constexpr int kToolbarButtonCount = 14;
 constexpr int kResultsWidth = 520;
 constexpr int kResultsHeight = 260;
 constexpr int kSelectionBorderWidth = 3;
@@ -29,15 +29,18 @@ constexpr UINT_PTR kResultPanelRestoreTimerId = 1;
 constexpr UINT kResultPanelRestoreDelayMs = 1000;
 constexpr UINT_PTR kToolbarTooltipTimerId = 2;
 constexpr UINT kToolbarTooltipDelayMs = 650;
+constexpr UINT kFinishTextInputMessage = WM_APP + 42;
+constexpr int kTextFontHeight = 24;
 constexpr std::array<ScreenshotAction, kToolbarButtonCount> kToolbarActions{
     ScreenshotAction::extract_text, ScreenshotAction::summarize,
     ScreenshotAction::translate, ScreenshotAction::copy, ScreenshotAction::save,
     ScreenshotAction::recapture, ScreenshotAction::pin_image,
-    ScreenshotAction::pen, ScreenshotAction::pixelate, ScreenshotAction::eraser,
+    ScreenshotAction::pen, ScreenshotAction::add_text, ScreenshotAction::pixelate,
+    ScreenshotAction::eraser,
     ScreenshotAction::undo, ScreenshotAction::redo, ScreenshotAction::close};
 constexpr std::array<const wchar_t*, kToolbarButtonCount> kToolbarNames{
     L"提取文字", L"总结截图", L"翻译文字", L"复制", L"保存",
-    L"重新截取", L"贴到桌面", L"画笔", L"马赛克", L"橡皮擦",
+    L"重新截取", L"贴到桌面", L"画笔", L"输入文字", L"马赛克", L"橡皮擦",
     L"撤销", L"重做", L"关闭"};
 
 // 作用：集中保存工具栏的物理像素尺寸，保证绘制、点击和悬停使用同一排版。
@@ -152,12 +155,14 @@ bool SelectionWindow::Create() {
 }
 
 SelectionWindow::~SelectionWindow() {
+    FinishTextInput(false, false);
     if (frame_dc_ && previous_frame_bitmap_) SelectObject(frame_dc_, previous_frame_bitmap_);
     if (frame_bitmap_) DeleteObject(frame_bitmap_);
     if (frame_dc_) DeleteDC(frame_dc_);
 }
 
 bool SelectionWindow::ShowFor(platform::ScreenshotService& snapshot) {
+    FinishTextInput(false, false);
     KillTimer(handle(), kResultPanelRestoreTimerId);
     ClearToolbarHover();
     snapshot_ = &snapshot;
@@ -251,6 +256,7 @@ bool SelectionWindow::PresentFrame() {
 }
 
 void SelectionWindow::Hide() {
+    FinishTextInput(false, false);
     if (!visible_) return;
     KillTimer(handle(), kResultPanelRestoreTimerId);
     ClearToolbarHover();
@@ -343,7 +349,7 @@ void SelectionWindow::UpdateCursor(POINT client_point) const {
     const POINT edit_point = ScreenPoint(client_point);
     if (selected_ && HitResizeEdges(edit_point) == 0 &&
         PtInRect(&selection_, edit_point) && edit_tool_ != EditTool::none) {
-        SetCursor(LoadCursorW(nullptr, IDC_CROSS));
+        SetCursor(LoadCursorW(nullptr, edit_tool_ == EditTool::text ? IDC_IBEAM : IDC_CROSS));
         return;
     }
     if (drag_mode_ == DragMode::create) {
@@ -425,6 +431,10 @@ void SelectionWindow::UpdateDrag(POINT client_point) {
         for (auto& stroke : edits_.strokes)
             for (auto& point : stroke.points) { point.x += shift_x; point.y += shift_y; }
         for (auto& area : edits_.pixelated_areas) OffsetRect(&area, shift_x, shift_y);
+        for (auto& annotation : edits_.texts) {
+            annotation.origin.x += shift_x;
+            annotation.origin.y += shift_y;
+        }
     }
     if (analysis_result_visible_) {
         // 核心逻辑：选区移动期间隐藏结果面板，并在每次鼠标移动后重新等待一秒。
@@ -605,7 +615,7 @@ void SelectionWindow::Redo() {
 // 作用：沿手势路径采样并删除相交的笔迹或马赛克对象。
 // 参数：from、to 为屏幕坐标的路径两端。返回：至少删除一个对象时为 true。
 bool SelectionWindow::EraseBetween(POINT from, POINT to) {
-    if (edits_.strokes.empty() && edits_.pixelated_areas.empty()) return false;
+    if (edits_.strokes.empty() && edits_.pixelated_areas.empty() && edits_.texts.empty()) return false;
     const int radius = std::max(4, platform::Scale(9, GetDpiForWindow(handle())));
     const int distance = std::max(std::abs(static_cast<int>(to.x - from.x)),
         std::abs(static_cast<int>(to.y - from.y)));
@@ -618,21 +628,116 @@ bool SelectionWindow::EraseBetween(POINT from, POINT to) {
             [&](const auto& stroke) { return StrokeTouches(stroke, relative, radius); }) != 0;
         changed |= std::erase_if(edits_.pixelated_areas,
             [&](RECT area) { return AreaTouches(area, relative, radius); }) != 0;
-        if (edits_.strokes.empty() && edits_.pixelated_areas.empty()) break;
+        changed |= std::erase_if(edits_.texts, [&](const auto& annotation) {
+            const RECT bounds = platform::ScreenshotTextBounds(frame_dc_,
+                selection_.right - selection_.left, selection_.bottom - selection_.top, annotation);
+            return bounds.right > bounds.left && AreaTouches(bounds, relative, radius);
+        }) != 0;
+        if (edits_.strokes.empty() && edits_.pixelated_areas.empty() && edits_.texts.empty()) break;
     }
     return changed;
 }
 
+// 作用：在文字落点附近创建由本窗口拥有的临时原生输入框。
+// 参数：screen_point 为选区内的屏幕坐标。返回：创建并取得输入焦点为 true。
+bool SelectionWindow::BeginTextInput(POINT screen_point) {
+    if (!selected_ || text_editor_) return false;
+    const RECT desktop = snapshot_ ? snapshot_->bounds() : selection_;
+    const int width = std::min(static_cast<int>(desktop.right - desktop.left),
+        std::max(60, std::min(360, static_cast<int>(selection_.right - screen_point.x))));
+    const int height = std::min(static_cast<int>(desktop.bottom - desktop.top),
+        std::max(38, std::min(120, static_cast<int>(selection_.bottom - screen_point.y))));
+    const int left = std::clamp(static_cast<int>(screen_point.x), static_cast<int>(desktop.left),
+        static_cast<int>(desktop.right) - width);
+    const int top = std::clamp(static_cast<int>(screen_point.y), static_cast<int>(desktop.top),
+        static_cast<int>(desktop.bottom) - height);
+    text_origin_ = {screen_point.x - selection_.left, screen_point.y - selection_.top};
+    HWND editor = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, L"EDIT", L"",
+        WS_POPUP | WS_BORDER | ES_MULTILINE | ES_WANTRETURN | ES_AUTOVSCROLL | WS_VSCROLL,
+        left, top, width, height, handle(), nullptr,
+        GetModuleHandleW(nullptr), nullptr);
+    if (!editor) return false;
+    text_editor_ = editor;
+    SetWindowLongPtrW(editor, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+    original_text_edit_proc_ = reinterpret_cast<WNDPROC>(
+        SetWindowLongPtrW(editor, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&TextEditProc)));
+    if (!original_text_edit_proc_) {
+        text_editor_ = nullptr;
+        DestroyWindow(editor);
+        return false;
+    }
+    SendMessageW(editor, EM_LIMITTEXT, 2048, 0);
+    text_editor_font_ = CreateFontW(-platform::Scale(kTextFontHeight, GetDpiForWindow(handle())),
+        0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei UI");
+    SendMessageW(editor, WM_SETFONT,
+        reinterpret_cast<WPARAM>(text_editor_font_ ? text_editor_font_ : GetStockObject(DEFAULT_GUI_FONT)),
+        TRUE);
+    // 核心逻辑：输入框单独接受键盘焦点，不被分层窗口每帧重绘覆盖；确认后才合成到截图像素。
+    ShowWindow(editor, SW_SHOW);
+    SetFocus(editor);
+    return true;
+}
+
+// 作用：提交或取消当前文字输入，并释放窗口及字体资源。
+// 参数：accept 表示提交非空文字；restore_focus 表示操作后继续使用截图快捷键。返回：无。
+void SelectionWindow::FinishTextInput(bool accept, bool restore_focus) {
+    if (!text_editor_) return;
+    HWND editor = text_editor_;
+    std::wstring content;
+    if (accept) {
+        const int length = GetWindowTextLengthW(editor);
+        content.resize(length + 1);
+        const int copied = GetWindowTextW(editor, content.data(), length + 1);
+        content.resize(std::max(0, copied));
+    }
+    text_editor_ = nullptr;
+    DestroyWindow(editor);
+    original_text_edit_proc_ = nullptr;
+    if (text_editor_font_) DeleteObject(text_editor_font_);
+    text_editor_font_ = nullptr;
+    if (accept && content.find_first_not_of(L" \t\r\n") != std::wstring::npos && selected_) {
+        const ScreenshotSelectionState before = CaptureState();
+        edits_.texts.push_back({text_origin_, std::move(content),
+            platform::Scale(kTextFontHeight, GetDpiForWindow(handle()))});
+        CommitState(before);
+        InvalidateRect(handle(), nullptr, FALSE);
+    }
+    if (restore_focus && visible_) SetFocus(handle());
+}
+
+// 作用：让 Enter 确认、Esc 取消文字输入，Shift+Enter 保留原生多行输入。
+// 参数：editor 为当前输入框；message、wparam、lparam 为消息。返回：处理结果或原过程结果。
+LRESULT CALLBACK SelectionWindow::TextEditProc(HWND editor, UINT message,
+    WPARAM wparam, LPARAM lparam) {
+    auto* owner = reinterpret_cast<SelectionWindow*>(GetWindowLongPtrW(editor, GWLP_USERDATA));
+    if (!owner || !owner->original_text_edit_proc_)
+        return DefWindowProcW(editor, message, wparam, lparam);
+    if (message == WM_KEYDOWN) {
+        if (wparam == VK_ESCAPE || (wparam == VK_RETURN && !(GetKeyState(VK_SHIFT) & 0x8000))) {
+            owner->FinishTextInput(wparam == VK_RETURN);
+            return 0;
+        }
+    }
+    const WNDPROC original = owner->original_text_edit_proc_;
+    const LRESULT result = CallWindowProcW(original, editor, message, wparam, lparam);
+    if (message == WM_KILLFOCUS) PostMessageW(owner->handle(), kFinishTextInputMessage, 0, 0);
+    return result;
+}
+
 void SelectionWindow::Dispatch(ScreenshotAction action) {
     if (action == ScreenshotAction::none) return;
+    if (text_editor_) FinishTextInput(true, false);
     if (drag_mode_ != DragMode::none &&
         (action == ScreenshotAction::undo || action == ScreenshotAction::redo)) return;
     if (action == ScreenshotAction::undo) { Undo(); return; }
     if (action == ScreenshotAction::redo) { Redo(); return; }
     if (action == ScreenshotAction::pen || action == ScreenshotAction::pixelate ||
-        action == ScreenshotAction::eraser) {
+        action == ScreenshotAction::eraser || action == ScreenshotAction::add_text) {
         const EditTool requested = action == ScreenshotAction::pen ? EditTool::pen
-            : action == ScreenshotAction::pixelate ? EditTool::pixelate : EditTool::eraser;
+            : action == ScreenshotAction::pixelate ? EditTool::pixelate
+            : action == ScreenshotAction::eraser ? EditTool::eraser : EditTool::text;
         edit_tool_ = edit_tool_ == requested ? EditTool::none : requested;
         InvalidateRect(handle(), nullptr, FALSE);
         return;
@@ -699,7 +804,8 @@ void SelectionWindow::DrawFrame(HDC dc) {
     }
     if (source) DeleteDC(source);
 
-    if (selected_ && (!edits_.strokes.empty() || !edits_.pixelated_areas.empty())) {
+    if (selected_ && (!edits_.strokes.empty() || !edits_.pixelated_areas.empty() ||
+        !edits_.texts.empty())) {
         const int saved = SaveDC(dc);
         const RECT region = ToClient(Selection(), origin);
         IntersectClipRect(dc, region.left, region.top, region.right, region.bottom);
@@ -779,7 +885,8 @@ void SelectionWindow::DrawFrame(HDC dc) {
                 : (action == ScreenshotAction::close ? Color(67, 76, 79)
                     : ((action == ScreenshotAction::pen && edit_tool_ == EditTool::pen) ||
                        (action == ScreenshotAction::pixelate && edit_tool_ == EditTool::pixelate) ||
-                       (action == ScreenshotAction::eraser && edit_tool_ == EditTool::eraser)
+                        (action == ScreenshotAction::eraser && edit_tool_ == EditTool::eraser) ||
+                        (action == ScreenshotAction::add_text && edit_tool_ == EditTool::text)
                         ? Color(36, 108, 192) : Color(44, 135, 119)));
             Fill(dc, item, background);
             // 核心逻辑：按钮图标直接在截图后台表面绘制，保持透明背景与高 DPI 清晰度。
@@ -835,6 +942,7 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             return TRUE;
         case WM_LBUTTONDOWN:
         {
+            if (text_editor_) FinishTextInput(true, false);
             ClearToolbarHover();
             const POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
             const POINT screen_point = ScreenPoint(point);
@@ -850,6 +958,10 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
 
             if (selected_ && edit_tool_ != EditTool::none &&
                 HitResizeEdges(screen_point) == 0 && PtInRect(&selection_, screen_point)) {
+                if (edit_tool_ == EditTool::text) {
+                    BeginTextInput(screen_point);
+                    return 0;
+                }
                 // 核心逻辑：编辑模式仅修改既有选区，不把笔迹手势误判为移动选区。
                 edit_start_ = screen_point;
                 edit_current_ = screen_point;
@@ -990,6 +1102,9 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 return 0;
             }
             return WindowBase::HandleMessage(message, wparam, lparam);
+        case kFinishTextInputMessage:
+            if (text_editor_ && GetFocus() != text_editor_) FinishTextInput(true, false);
+            return 0;
         case WM_KEYDOWN:
             if ((GetKeyState(VK_CONTROL) & 0x8000) && wparam == 'Z') {
                 Dispatch((GetKeyState(VK_SHIFT) & 0x8000)

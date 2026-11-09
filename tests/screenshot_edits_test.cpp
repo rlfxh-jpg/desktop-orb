@@ -1,4 +1,4 @@
-// 文件职责：验证截图画笔与马赛克会修改输出位图的真实像素。
+// 文件职责：验证截图画笔、马赛克和文字会修改输出位图的真实像素。
 // 测试只使用内存中的 32 位 DIB，不读取桌面或剪贴板。
 #include "desktop_orb/platform/screenshot/screenshot_edits.hpp"
 
@@ -42,5 +42,29 @@ int main() {
     if (!applied) return 3;
     if (!pixelated) return 4;
     if (!pen_is_red) return 5;
+    HDC text_dc = CreateCompatibleDC(nullptr);
+    void* text_pixels = nullptr;
+    info.bmiHeader.biWidth = 128;
+    HBITMAP text_bitmap = text_dc ? CreateDIBSection(text_dc, &info, DIB_RGB_COLORS,
+        &text_pixels, nullptr, 0) : nullptr;
+    if (!text_bitmap || !text_pixels) return 6;
+    HGDIOBJ old_text = SelectObject(text_dc, text_bitmap);
+    if (!old_text || old_text == HGDI_ERROR) return 7;
+    RECT background{0, 0, 128, height};
+    FillRect(text_dc, &background, static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
+    ScreenshotEdits text_edits;
+    text_edits.texts.push_back({{8, 8}, L"文字", 24});
+    const RECT text_bounds = desktop_orb::platform::ScreenshotTextBounds(text_dc,
+        128, height, text_edits.texts.front());
+    const bool text_applied = ApplyScreenshotEdits(text_dc, 128, height, text_edits);
+    const auto* text_color = static_cast<const unsigned int*>(text_pixels);
+    bool visible_text = false;
+    for (int y = 8; y < text_bounds.bottom && !visible_text; ++y)
+        for (int x = 8; x < text_bounds.right; ++x)
+            if ((text_color[y * 128 + x] & 0x00FFFFFFU) != 0) { visible_text = true; break; }
+    SelectObject(text_dc, old_text);
+    DeleteObject(text_bitmap);
+    DeleteDC(text_dc);
+    if (text_bounds.right <= text_bounds.left || !text_applied || !visible_text) return 8;
     return 0;
 }
