@@ -3,8 +3,10 @@
 #include "desktop_orb/ui/screenshot/selection_window.hpp"
 
 #include "desktop_orb/ui/common/drawing.hpp"
+#include "desktop_orb/ui/screenshot/toolbar_icons.hpp"
 #include "desktop_orb/platform/common/monitor.hpp"
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <string>
 #include <utility>
@@ -15,10 +17,10 @@ namespace {
 
 constexpr int kToolbarRowHeight = 42;
 constexpr int kToolbarHeight = kToolbarRowHeight * 2;
-constexpr int kToolbarButtonWidth = 76;
-constexpr int kToolbarGap = 5;
+constexpr int kToolbarButtonWidth = 38;
+constexpr int kToolbarGap = 6;
 constexpr int kToolbarPadding = 6;
-constexpr int kToolbarColumns = 6;
+constexpr int kToolbarColumns = 5;
 constexpr int kToolbarButtonCount = 10;
 constexpr int kToolbarWidth = kToolbarPadding * 2 + kToolbarButtonWidth * kToolbarColumns +
                               kToolbarGap * (kToolbarColumns - 1);
@@ -29,6 +31,16 @@ constexpr int kResizeHitTolerance = 8;
 constexpr COLORREF kSelectionBorderColor = RGB(24, 132, 255);
 constexpr UINT_PTR kResultPanelRestoreTimerId = 1;
 constexpr UINT kResultPanelRestoreDelayMs = 1000;
+constexpr UINT_PTR kToolbarTooltipTimerId = 2;
+constexpr UINT kToolbarTooltipDelayMs = 650;
+constexpr std::array<ScreenshotAction, kToolbarButtonCount> kToolbarActions{
+    ScreenshotAction::extract_text, ScreenshotAction::summarize,
+    ScreenshotAction::translate, ScreenshotAction::copy, ScreenshotAction::save,
+    ScreenshotAction::recapture, ScreenshotAction::pin_image,
+    ScreenshotAction::pen, ScreenshotAction::pixelate, ScreenshotAction::close};
+constexpr std::array<const wchar_t*, kToolbarButtonCount> kToolbarNames{
+    L"提取文字", L"总结截图", L"翻译文字", L"复制", L"保存",
+    L"重新截取", L"贴到桌面", L"画笔", L"马赛克", L"关闭"};
 
 // 作用：把屏幕坐标矩形转换为以虚拟桌面原点为基准的客户区坐标。
 // 参数：screen 为屏幕矩形；origin 为窗口屏幕原点。返回：客户区矩形。
@@ -78,6 +90,7 @@ SelectionWindow::~SelectionWindow() {
 
 bool SelectionWindow::ShowFor(platform::ScreenshotService& snapshot) {
     KillTimer(handle(), kResultPanelRestoreTimerId);
+    ClearToolbarHover();
     snapshot_ = &snapshot;
     const RECT bounds = snapshot.bounds();
     const int width = bounds.right - bounds.left;
@@ -170,6 +183,7 @@ bool SelectionWindow::PresentFrame() {
 void SelectionWindow::Hide() {
     if (!visible_) return;
     KillTimer(handle(), kResultPanelRestoreTimerId);
+    ClearToolbarHover();
     visible_ = false;
     drag_mode_ = DragMode::none;
     toolbar_pressed_ = false;
@@ -438,10 +452,32 @@ ScreenshotAction SelectionWindow::HitAction(POINT point) const {
     const int column = offset / stride;
     const int row = (point.y - bar.top) / platform::Scale(kToolbarRowHeight, dpi);
     const int index = row * kToolbarColumns + column;
-    if (offset < 0 || row < 0 || row > 1 || column < 0 || column >= kToolbarColumns ||
+    if (offset < 0 || point.y < bar.top || row > 1 || column < 0 || column >= kToolbarColumns ||
         index >= kToolbarButtonCount || offset % stride >= button)
         return ScreenshotAction::none;
-    return static_cast<ScreenshotAction>(index);
+    return kToolbarActions[index];
+}
+
+// 作用：追踪当前图标的鼠标悬停，只有连续停留一段时间才显示名称。
+// 参数：point 为窗口客户区坐标。返回：无；拖拽与按钮按下期间不显示提示。
+void SelectionWindow::UpdateToolbarHover(POINT point) {
+    const ScreenshotAction next = selected_ && drag_mode_ == DragMode::none && !toolbar_pressed_
+        ? HitAction(point) : ScreenshotAction::none;
+    if (next == hovered_action_) return;
+    ClearToolbarHover();
+    hovered_action_ = next;
+    if (next != ScreenshotAction::none)
+        SetTimer(handle(), kToolbarTooltipTimerId, kToolbarTooltipDelayMs, nullptr);
+}
+
+// 作用：清除工具栏提示计时器和当前悬停状态。
+// 参数：无。返回：无。
+void SelectionWindow::ClearToolbarHover() {
+    KillTimer(handle(), kToolbarTooltipTimerId);
+    const bool had_tooltip = toolbar_tooltip_visible_;
+    hovered_action_ = ScreenshotAction::none;
+    toolbar_tooltip_visible_ = false;
+    if (had_tooltip && visible_) InvalidateRect(handle(), nullptr, FALSE);
 }
 
 void SelectionWindow::Dispatch(ScreenshotAction action) {
@@ -560,8 +596,6 @@ void SelectionWindow::DrawFrame(HDC dc) {
     if (selected_) {
         const RECT bar = ToClient(ToolbarBounds(), origin);
         Fill(dc, bar, Color(29, 39, 42));
-        const wchar_t* labels[] = {L"提取文字", L"总结截图", L"复制", L"保存", L"重新截取", L"关闭",
-            L"画笔", L"马赛克", L"翻译文字", L"贴到桌面"};
         const UINT dpi = GetDpiForWindow(handle());
         const int pad = platform::Scale(kToolbarPadding, dpi);
         const int button = platform::Scale(kToolbarButtonWidth, dpi);
@@ -574,16 +608,47 @@ void SelectionWindow::DrawFrame(HDC dc) {
                 bar.top + row * row_height + platform::Scale(5, dpi),
                 bar.left + pad + column * (button + gap) + button,
                 bar.top + (row + 1) * row_height - platform::Scale(5, dpi)};
-            const bool analysis_disabled = analysis_pending_ && (index < 2 || index == 8);
+            const ScreenshotAction action = kToolbarActions[index];
+            const bool analysis_disabled = analysis_pending_ &&
+                (action == ScreenshotAction::extract_text || action == ScreenshotAction::summarize ||
+                 action == ScreenshotAction::translate);
             const COLORREF background = analysis_disabled ? Color(77, 84, 86)
-                : (index == 5 ? Color(67, 76, 79)
-                    : ((index == 6 && edit_tool_ == EditTool::pen) ||
-                       (index == 7 && edit_tool_ == EditTool::pixelate)
+                : (action == ScreenshotAction::close ? Color(67, 76, 79)
+                    : ((action == ScreenshotAction::pen && edit_tool_ == EditTool::pen) ||
+                       (action == ScreenshotAction::pixelate && edit_tool_ == EditTool::pixelate)
                         ? Color(36, 108, 192) : Color(44, 135, 119)));
             Fill(dc, item, background);
-            const wchar_t* label = analysis_disabled ? L"处理中" : labels[index];
-            Text(dc, label, item, platform::Scale(12, dpi), Color(255, 255, 255), FW_SEMIBOLD,
-                 DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            // 核心逻辑：按钮图标直接在截图后台表面绘制，保持透明背景与高 DPI 清晰度。
+            const int icon_size = platform::Scale(23, dpi);
+            const int icon_left = (item.left + item.right - icon_size) / 2;
+            const int icon_top = (item.top + item.bottom - icon_size) / 2;
+            if (!DrawScreenshotToolbarIcon(dc, action,
+                    {icon_left, icon_top, icon_left + icon_size, icon_top + icon_size},
+                    analysis_disabled ? Color(190, 195, 197) : Color(255, 255, 255))) {
+                Text(dc, L"?", item, platform::Scale(17, dpi), Color(255, 255, 255),
+                    FW_SEMIBOLD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            }
+        }
+        if (toolbar_tooltip_visible_ && hovered_action_ != ScreenshotAction::none) {
+            const auto found = std::find(kToolbarActions.begin(), kToolbarActions.end(), hovered_action_);
+            if (found != kToolbarActions.end()) {
+                const int index = static_cast<int>(found - kToolbarActions.begin());
+                const int column = index % kToolbarColumns;
+                const int tooltip_width = platform::Scale(88, dpi);
+                const int tooltip_height = platform::Scale(27, dpi);
+                const int center = bar.left + pad + column * (button + gap) + button / 2;
+                const int left = std::clamp(center - tooltip_width / 2, 0,
+                    std::max(0, frame_width_ - tooltip_width));
+                const int top = bar.top >= tooltip_height + platform::Scale(5, dpi)
+                    ? static_cast<int>(bar.top) - tooltip_height - platform::Scale(5, dpi)
+                    : std::min(frame_height_ - tooltip_height,
+                        static_cast<int>(bar.bottom) + platform::Scale(5, dpi));
+                const RECT tooltip{left, top, left + tooltip_width, top + tooltip_height};
+                Fill(dc, tooltip, Color(34, 43, 47));
+                Text(dc, kToolbarNames[index], tooltip, platform::Scale(12, dpi),
+                    Color(255, 255, 255), FW_SEMIBOLD,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            }
         }
     }
 
@@ -605,6 +670,7 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             return TRUE;
         case WM_LBUTTONDOWN:
         {
+            ClearToolbarHover();
             const POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
             const POINT screen_point = ScreenPoint(point);
             const RECT desktop = snapshot_ ? snapshot_->bounds() : RECT{};
@@ -678,6 +744,7 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                 InvalidateRect(handle(), nullptr, FALSE);
             }
             UpdateCursor({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+            UpdateToolbarHover({GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
             return 0;
         case WM_LBUTTONUP:
             if (toolbar_pressed_) {
@@ -727,6 +794,15 @@ LRESULT SelectionWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
             InvalidateRect(handle(), nullptr, FALSE);
             return 0;
         case WM_TIMER:
+            if (wparam == kToolbarTooltipTimerId) {
+                KillTimer(handle(), kToolbarTooltipTimerId);
+                if (visible_ && selected_ && hovered_action_ != ScreenshotAction::none &&
+                    drag_mode_ == DragMode::none) {
+                    toolbar_tooltip_visible_ = true;
+                    InvalidateRect(handle(), nullptr, FALSE);
+                }
+                return 0;
+            }
             if (wparam == kResultPanelRestoreTimerId) {
                 KillTimer(handle(), kResultPanelRestoreTimerId);
                 if (visible_ && drag_mode_ == DragMode::none && analysis_result_visible_)

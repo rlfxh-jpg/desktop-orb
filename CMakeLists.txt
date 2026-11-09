@@ -37,6 +37,7 @@ add_executable(desktop-orb WIN32
     src/ui/desktop_fence/fence_card_renderer.cpp
     src/ui/window_switcher/switcher_panel.cpp
     src/ui/screenshot/selection_window.cpp
+    src/ui/screenshot/toolbar_icons.cpp
     src/ui/screenshot/pinned_image_window.cpp
     src/ui/screenshot/result_panel_window.cpp
 )

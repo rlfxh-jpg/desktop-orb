@@ -104,6 +104,12 @@ private:
     // 作用：在指定操作栏局部点命中操作按钮。参数：point 为客户区坐标。
     // 返回：命中操作；按钮间隙或空白处为 none。
     [[nodiscard]] ScreenshotAction HitAction(POINT point) const;
+    // 作用：在鼠标进入新按钮后延时显示该图标的功能名称。
+    // 参数：point 为截图窗口客户区坐标。返回：无；离开操作栏时清除提示。
+    void UpdateToolbarHover(POINT point);
+    // 作用：清除悬停按钮及待显示的提示。
+    // 参数：无。返回：无。
+    void ClearToolbarHover();
     // 作用：根据动作通知应用层并保持窗口生命周期由应用管理。
     // 参数：action 为请求操作。返回：无。
     void Dispatch(ScreenshotAction action);
@@ -120,6 +126,8 @@ private:
     DragMode drag_mode_ = DragMode::none;
     unsigned int resize_edges_ = 0;
     bool toolbar_pressed_ = false;
+    ScreenshotAction hovered_action_ = ScreenshotAction::none;
+    bool toolbar_tooltip_visible_ = false;
     bool selected_ = false;
     bool analysis_pending_ = false;
     bool analysis_result_visible_ = false;
