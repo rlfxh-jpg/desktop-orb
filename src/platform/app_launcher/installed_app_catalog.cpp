@@ -1,11 +1,15 @@
 // 文件职责：通过 Windows AppsFolder 列出传统桌面程序与打包应用，并由 Shell 启动。
 // COM 与 PIDL 仅在调用期间持有；返回的图标所有权转移给 UI 调用方。
 #include "desktop_orb/platform/app_launcher/installed_app_catalog.hpp"
+#include "desktop_orb/platform/app_launcher/app_entry_rules.hpp"
 
 #include <algorithm>
 #include <cwctype>
 #include <shlobj.h>
 #include <shellapi.h>
+#include <propsys.h>
+#include <propkey.h>
+#include <propvarutil.h>
 #include <unordered_set>
 #include <wrl/client.h>
 
@@ -33,6 +37,22 @@ std::wstring ShellName(PCIDLIST_ABSOLUTE pidl, SIGDN kind) {
     std::wstring name(raw);
     CoTaskMemFree(raw);
     return name;
+}
+
+// 作用：从 Shell 条目属性读取快捷方式的实际目标路径。
+// 参数：pidl 为 AppsFolder 中的完整项目 ID。
+// 返回：目标路径；无属性或读取失败时为空，打包应用允许为空。
+std::wstring TargetPath(PCIDLIST_ABSOLUTE pidl) {
+    Microsoft::WRL::ComPtr<IShellItem2> item;
+    if (FAILED(SHCreateItemFromIDList(pidl, IID_PPV_ARGS(item.GetAddressOf())))) return {};
+    PWSTR raw = nullptr;
+    if (FAILED(item->GetString(PKEY_Link_TargetParsingPath, &raw)) || !raw) {
+        if (raw) CoTaskMemFree(raw);
+        return {};
+    }
+    std::wstring target(raw);
+    CoTaskMemFree(raw);
+    return target;
 }
 
 // 作用：把 AppsFolder 根目录或其中应用的解析名称转换为完整 PIDL。
@@ -92,7 +112,7 @@ std::vector<InstalledApp> InstalledAppCatalog::List(std::wstring& error) const {
         return {};
     }
 
-    std::vector<InstalledApp> apps;
+    std::vector<AppEntryCandidate> candidates;
     std::unordered_set<std::wstring> seen;
     PITEMID_CHILD child = nullptr;
     while (enumerator->Next(1, &child, nullptr) == S_OK) {
@@ -102,18 +122,15 @@ std::vector<InstalledApp> InstalledAppCatalog::List(std::wstring& error) const {
                              ShellName(absolute, SIGDN_DESKTOPABSOLUTEPARSING)};
             app.kind = ClassifyApp(app.parsing_name);
             if (!app.name.empty() && !app.parsing_name.empty() &&
-                seen.insert(app.parsing_name).second) apps.push_back(std::move(app));
+                seen.insert(app.parsing_name).second)
+                candidates.push_back({std::move(app), TargetPath(absolute)});
             CoTaskMemFree(absolute);
         }
         CoTaskMemFree(child);
         child = nullptr;
     }
     CoTaskMemFree(folder_pidl);
-    std::sort(apps.begin(), apps.end(), [](const InstalledApp& left, const InstalledApp& right) {
-        const int order = CompareStringOrdinal(left.name.c_str(), -1, right.name.c_str(), -1, TRUE);
-        return order == CSTR_LESS_THAN || (order == CSTR_EQUAL && left.parsing_name < right.parsing_name);
-    });
-    return apps;
+    return SelectLaunchableApps(std::move(candidates));
 }
 
 // 作用：使用 Shell PIDL 启动 AppsFolder 项目，兼容桌面程序和打包应用。

@@ -11,6 +11,7 @@ add_executable(desktop-orb WIN32
     src/platform/common/single_instance.cpp
     src/platform/common/settings.cpp
     src/platform/app_launcher/installed_app_catalog.cpp
+    src/platform/app_launcher/app_entry_rules.cpp
     src/platform/desktop_fence/desktop_item_catalog.cpp
     src/platform/desktop_fence/desktop_icon_visibility.cpp
     src/platform/desktop_fence/desktop_window_layer.cpp
@@ -57,6 +58,20 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(app-entry-rules-test
+        tests/app_entry_rules_test.cpp
+        src/platform/app_launcher/app_entry_rules.cpp
+        src/platform/app_launcher/installed_app_catalog.cpp
+    )
+    target_include_directories(app-entry-rules-test PRIVATE include)
+    target_compile_features(app-entry-rules-test PRIVATE cxx_std_20)
+    target_compile_definitions(app-entry-rules-test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(app-entry-rules-test PRIVATE user32 shell32 ole32)
+    if(MSVC)
+        target_compile_options(app-entry-rules-test PRIVATE /W4 /permissive- /utf-8)
+    endif()
+    add_test(NAME app-entry-rules COMMAND app-entry-rules-test)
+
     add_executable(feature-layout-test
         tests/feature_layout_test.cpp
         src/ui/common/feature_layout.cpp
